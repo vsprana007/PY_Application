@@ -15,6 +15,6 @@ class PaymentSessionSerializer(serializers.ModelSerializer):
         read_only_fields = ['cashfree_order_id', 'payment_session_id', 'transaction_id']
 
 class CreatePaymentSessionSerializer(serializers.Serializer):
-    order_id = serializers.IntegerField()
+    order_id = serializers.UUIDField()
     return_url = serializers.URLField(required=False)
     notify_url = serializers.URLField(required=False)

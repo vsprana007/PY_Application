@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, use } from "react"
-import { Heart, Minus, Plus, Star, Truck, Shield, RotateCcw, Share2, X, ChevronDown, FileText, Award, CheckCircle, Calendar, ThumbsUp,
+import { ArrowLeft, Heart, Minus, Plus, Star, Truck, Shield, RotateCcw, Share2, X, ChevronDown, FileText, Award, CheckCircle, Calendar, ThumbsUp, ShoppingCart,
 } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
@@ -10,7 +10,7 @@ import type { ProductVariant } from "@/hooks/use-products"
 import { useCart } from "@/hooks/use-cart"
 import { useAuth } from "@/hooks/use-auth"
 import { useWishlist } from "@/hooks/use-wishlist"
-
+import { formatCurrency, safeNumber, safeString, safeArray, safeGet, truncateText } from "@/lib/utils"
 
 interface ProductPageProps {
   productId: string
@@ -28,7 +28,7 @@ export function ProductPage({ productId }: ProductPageProps) {
   const [mySelectedVariant, setMySelectedVariant] = useState(0)
   const [selectedVariant, setSelectedVariant] = useState<ProductVariant | null>(null)
   const [showReportModal, setShowReportModal] = useState(false)
-  const { addToCart, isLoading: cartLoading } = useCart()
+  const { addToCart, isLoading: cartLoading, getCartItemCount } = useCart()
   const { isAuthenticated } = useAuth()
   
   
@@ -306,6 +306,19 @@ export function ProductPage({ productId }: ProductPageProps) {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* Header */}
+      <div className="bg-white shadow-sm p-4 flex items-center sticky top-0 z-10">
+        <button onClick={() => router.back()} className="mr-4">
+          <ArrowLeft size={24} />
+        </button>
+        <h1 className="text-lg font-semibold flex-1 truncate">{truncateText(product?.name, 40)}</h1>
+        <button onClick={() => router.push("/cart")} className="relative">
+          <ShoppingCart size={24} />
+          <span className="absolute top-0 right-0 bg-red-500 text-white text-xs font-semibold rounded-full px-1.5 py-0.5">
+            {getCartItemCount()}
+          </span>
+        </button>
+      </div>
       {/* Container with reduced spacing */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 lg:py-8">
         {/* Main Product Section */}

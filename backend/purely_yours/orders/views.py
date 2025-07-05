@@ -9,6 +9,7 @@ from cart.models import Cart
 from accounts.models import Address
 from decimal import Decimal
 
+
 class OrderListView(generics.ListAPIView):
     serializer_class = OrderSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -26,28 +27,34 @@ class OrderDetailView(generics.RetrieveAPIView):
 @api_view(['POST'])
 @permission_classes([permissions.IsAuthenticated])
 def create_order(request):
+    print('data', request.data)
     serializer = CreateOrderSerializer(data=request.data)
+    
     if serializer.is_valid():
         address_id = serializer.validated_data['address_id']
         payment_method = serializer.validated_data['payment_method']
         notes = serializer.validated_data.get('notes', '')
+        items_data = serializer.validated_data.get('items', [])
 
         try:
-            # Get user's cart
-            cart = Cart.objects.get(user=request.user)
-            if not cart.items.exists():
+            # Check if items are provided
+            if not items_data:
                 return Response({
                     'success': False,
-                    'message': 'Cart is empty'
+                    'message': 'No items provided'
                 }, status=status.HTTP_400_BAD_REQUEST)
 
             # Get shipping address
             address = get_object_or_404(Address, id=address_id, user=request.user)
 
             with transaction.atomic():
-                # Calculate totals
-                subtotal = cart.total_amount
-                shipping_cost = Decimal('50') if subtotal < Decimal('500') else Decimal('0')  # Free shipping above ₹500
+                # Calculate totals from provided items
+                subtotal = Decimal('0')
+                for item_data in items_data:
+                    item_total = Decimal(str(item_data['price'])) * item_data['quantity']
+                    subtotal += item_total
+
+                shipping_cost = Decimal('50') if subtotal < Decimal('500') else Decimal('0')
                 tax_amount = subtotal * Decimal('0.18')  # 18% GST
                 total_amount = subtotal + shipping_cost + tax_amount
 
@@ -69,16 +76,21 @@ def create_order(request):
                     shipping_pincode=address.pincode,
                     notes=notes
                 )
-
-                # Create order items
-                for cart_item in cart.items.all():
-                    price = cart_item.variant.price if cart_item.variant else cart_item.product.price
+                
+                # Create order items from provided data
+                from products.models import Product, ProductVariant
+                for item_data in items_data:
+                    product = get_object_or_404(Product, id=item_data['product_id'])
+                    variant = None
+                    if item_data.get('variant_id'):
+                        variant = get_object_or_404(ProductVariant, id=item_data['variant_id'])
+                    
                     OrderItem.objects.create(
                         order=order,
-                        product=cart_item.product,
-                        variant=cart_item.variant,
-                        quantity=cart_item.quantity,
-                        price=price
+                        product=product,
+                        variant=variant,
+                        quantity=item_data['quantity'],
+                        price=Decimal(str(item_data['price']))
                     )
 
                 # Create initial status history
@@ -89,25 +101,23 @@ def create_order(request):
                     created_by=request.user
                 )
 
-                # Clear cart
-                cart.items.all().delete()
-
                 return Response({
                     'success': True,
                     'message': 'Order created successfully',
                     'order': OrderSerializer(order, context={'request': request}).data
                 })
 
-        except Cart.DoesNotExist:
+        except Exception as e:
             return Response({
                 'success': False,
-                'message': 'Cart not found'
-            }, status=status.HTTP_404_NOT_FOUND)
-
-    return Response({
-        'success': False,
-        'errors': serializer.errors
-    }, status=status.HTTP_400_BAD_REQUEST)
+                'message': f'Error creating order: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    else:
+        print('Serializer errors:', serializer.errors)  # Add this line
+        return Response({
+            'success': False,
+            'errors': serializer.errors
+        }, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['POST'])
 @permission_classes([permissions.IsAuthenticated])

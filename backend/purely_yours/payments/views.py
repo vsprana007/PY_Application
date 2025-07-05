@@ -34,8 +34,9 @@ class PaymentSessionDetailView(generics.RetrieveAPIView):
 @api_view(['POST'])
 @permission_classes([permissions.IsAuthenticated])
 def create_payment_session(request):
-    print("Creating payment session with data:", request.data)
+    print('Request data:', request.data)
     serializer = CreatePaymentSessionSerializer(data=request.data)
+    
     if serializer.is_valid():
         order_id = serializer.validated_data['order_id']
         return_url = serializer.validated_data.get('return_url', f"{request.build_absolute_uri('/')[:-1]}/payment/success/")
@@ -44,7 +45,7 @@ def create_payment_session(request):
         try:
             # Get the order
             order = get_object_or_404(Order, id=order_id, user=request.user)
-            
+            print("Order found:", order)
             # Check if payment session already exists
             if hasattr(order, 'payment_session'):
                 payment_session = order.payment_session
@@ -73,8 +74,7 @@ def create_payment_session(request):
                 },
                 "order_meta": {
                     "return_url": return_url,
-                    "notify_url": notify_url,
-                    "payment_methods": "cc,dc,nb,upi,paylater,emi,cardlessemi,debitcardemi,creditcardemi"
+                    "notify_url": notify_url
                 },
                 "order_note": f"Payment for order {order.order_number}"
             }
@@ -140,7 +140,8 @@ def create_payment_session(request):
                 'message': 'An error occurred while creating payment session',
                 'error': str(e)
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
+    else:
+        print('Serializer errors:', serializer.errors)
     return Response({
         'success': False,
         'errors': serializer.errors
@@ -274,3 +275,29 @@ def payment_webhook(request):
 
     except Exception as e:
         return JsonResponse({'status': 'error', 'message': str(e)}, status=400)
+
+
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+def handle_payment(request):
+    """
+    Handle payment processing.
+    This is a placeholder for any additional payment handling logic.
+    """
+    return Response({
+        'success': True,
+        'message': 'Payment handling not implemented yet.'
+    }, status=status.HTTP_200_OK)
+
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+def handle_cashfree_otp(request):
+    """
+    Handle OTP verification.
+    This is a placeholder for any additional OTP handling logic.
+    """
+    data = request.data
+    return Response({
+        'success': True,
+        'message': 'OTP handling not implemented yet.'
+    }, status=status.HTTP_200_OK)

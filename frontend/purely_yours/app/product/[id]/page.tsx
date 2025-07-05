@@ -10,9 +10,7 @@ export default function Product({ params }: { params: Promise<{ id: string }> })
 
   return (
     <AuthProvider>
-      <MobileLayout>
         <ProductPage productId={id} />
-      </MobileLayout>
     </AuthProvider>
   )
 }

@@ -1,15 +1,15 @@
 "use client"
 
 import { MobileLayout } from "@/components/mobile-layout"
-import { AccountPage } from "@/components/account-page"
+import { OrdersPage } from "@/components/orders-page"
 import { AuthProvider } from "@/hooks/use-auth"
 
-export default function Account() {
+export default function Orders() {
   return (
     <AuthProvider>
-      <MobileLayout>
-        <AccountPage />
-      </MobileLayout>
+      
+        <OrdersPage />
+    
     </AuthProvider>
   )
 }

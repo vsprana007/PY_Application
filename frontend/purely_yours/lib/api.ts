@@ -1,4 +1,4 @@
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://192.168.0.160:8000/api"
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://192.168.0.161:8000/api"
 
 // API client with authentication and error handling
 class ApiClient {
@@ -431,7 +431,7 @@ class ApiClient {
       throw new Error("Valid item ID and quantity are required")
     }
 
-    return this.request(`/cart/items/${itemId}/`, {
+    return this.request(`/cart/update/${itemId}/`, {
       method: "PUT",
       body: JSON.stringify({ quantity }),
     })
@@ -442,7 +442,7 @@ class ApiClient {
       throw new Error("Item ID is required")
     }
 
-    return this.request(`/cart/items/${itemId}/`, {
+    return this.request(`/cart/remove/${itemId}/`, {
       method: "DELETE",
     })
   }
@@ -535,6 +535,12 @@ class ApiClient {
     shipping_address?: any
     payment_method: string
     notes?: string
+    items?: Array<{
+      product_id: number
+      variant_id?: number | null
+      quantity: number
+      price: number
+    }>
   }) {
     if (!data?.payment_method) {
       throw new Error("Payment method is required")

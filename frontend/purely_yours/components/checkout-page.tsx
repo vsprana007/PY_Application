@@ -78,6 +78,18 @@ export function CheckoutPage() {
     is_default: false,
   })
 
+  const [showCardForm, setShowCardForm] = useState(false)
+  const [showOtpForm, setShowOtpForm] = useState(false)
+  const [otpData, setOtpData] = useState<any>(null)
+  const [cardForm, setCardForm] = useState({
+    card_number: "",
+    card_expiry_mm: "",
+    card_expiry_yy: "",
+    card_cvv: "",
+    card_holder_name: "",
+  })
+  const [otp, setOtp] = useState("")
+
   // Load Cashfree SDK
   useEffect(() => {
     const script = document.createElement("script")
@@ -181,11 +193,25 @@ export function CheckoutPage() {
       return null
     }
 
+    if (!cart || cart.items.length === 0) {
+      setError("Your cart is empty")
+      return null
+    }
+
     try {
+      // Prepare cart items for the order
+      const orderItems = cart.items.map(item => ({
+        product_id: item.product.id,
+        variant_id: item.variant?.id || null,
+        quantity: item.quantity,
+        price: item.variant?.price ?? item.product.price
+      }))
+
       const response = await apiClient.createOrder({
         address_id: selectedAddress,
         payment_method: paymentMethod,
         notes: orderNotes,
+        items: orderItems
       })
 
       if (response.success) {
@@ -219,31 +245,228 @@ export function CheckoutPage() {
     }
   }
 
-  const handleCashfreePayment = async (session: PaymentSession) => {
-    if (!cashfreeLoaded || !window.Cashfree) {
-      throw new Error("Payment gateway not loaded. Please refresh and try again.")
+  const checkPaymentStatus = async (orderId: string) => {
+    try {
+      const response = await apiClient.request(`/payments/status/${orderId}/`, {
+        method: "GET",
+      })
+      
+      if (response.success) {
+        return response.data
+      } else {
+        throw new Error(response.message || "Failed to check payment status")
+      }
+    } catch (error: any) {
+      console.error("Error checking payment status:", error)
+      throw error
+    }
+  }
+
+  const handleCustomPayment = async (session: PaymentSession) => {
+    setLoading(true)
+    setError("")
+    
+    // Validate session data
+    if (!session || !session.payment_session_id) {
+      setError("Invalid payment session. Please try again.")
+      setLoading(false)
+      return
     }
 
-    const cashfree = window.Cashfree({ mode: session.cashfree_mode })
+    // Validate card form data
+    if (!cardForm.card_number || !cardForm.card_holder_name || 
+        !cardForm.card_expiry_mm || !cardForm.card_expiry_yy || !cardForm.card_cvv) {
+      setError("Please fill in all card details.")
+      setLoading(false)
+      return
+    }
 
-    return new Promise((resolve, reject) => {
-      cashfree
-        .checkout({
-          paymentSessionId: session.payment_session_id,
-          returnUrl: session.return_url,
-          redirectTarget: "_self",
-        })
-        .then((result: any) => {
-          if (result.error) {
-            reject(new Error(result.error.message || "Payment failed"))
-          } else {
-            resolve(result)
+    // Validate card number (basic check)
+    const cardNumber = cardForm.card_number.replace(/\s/g, "")
+    if (cardNumber.length < 13 || cardNumber.length > 19) {
+      setError("Please enter a valid card number.")
+      setLoading(false)
+      return
+    }
+
+    // Validate expiry month
+    const month = parseInt(cardForm.card_expiry_mm)
+    if (month < 1 || month > 12) {
+      setError("Please enter a valid expiry month (01-12).")
+      setLoading(false)
+      return
+    }
+
+    // Validate CVV
+    if (cardForm.card_cvv.length < 3 || cardForm.card_cvv.length > 4) {
+      setError("Please enter a valid CVV.")
+      setLoading(false)
+      return
+    }
+    
+    try {
+      const response = await fetch("https://sandbox.cashfree.com/pg/orders/sessions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-version": "2023-08-01",
+        },
+        body: JSON.stringify({
+          payment_session_id: session.payment_session_id,
+          payment_method: {
+            card: {
+              channel: "post",
+              card_number: cardNumber,
+              card_expiry_mm: cardForm.card_expiry_mm,
+              card_expiry_yy: cardForm.card_expiry_yy,
+              card_cvv: cardForm.card_cvv,
+              card_holder_name: cardForm.card_holder_name,
+            },
+          },
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+
+      const data = await response.json()
+      console.log("Payment response data:", data) 
+      if (data.data.url) {
+        // OTP required
+        setOtpData(data.data)
+        setShowOtpForm(true)
+        setShowCardForm(false)
+      } else if (data.payment_status === "SUCCESS") {
+        // Payment successful
+        clearCart()
+        router.push(`/payment/success?order_id=${session.cashfree_order_id}`)
+      } else {
+        // Handle other payment statuses
+        setError(data.message || `Payment failed with status: ${data.payment_status || 'Unknown'}`)
+      }
+    } catch (error: any) {
+      console.error("Payment processing error:", error)
+      setError(error.message || "Payment processing failed. Please try again.")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleOtpSubmit = async () => {
+    if (!otp || !otpData) {
+      setError("Please enter OTP")
+      return
+    }
+
+    setLoading(true)
+    setError("")
+    
+    try {
+      const response = await fetch(`${otpData.url}`, {
+        method: "POST",
+        headers: {
+          "accept": "*/*",
+          "Content-Type": "application/json",
+          "x-api-version": "2023-08-01",
+        },
+        body: JSON.stringify({
+          action: "SUBMIT_OTP",
+          otp: otp,
+        }),
+      })
+      
+      console.log("OTP response status:", response.status, response.statusText)
+      
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error("OTP response error:", errorText)
+        throw new Error(`HTTP error! status: ${response.status} - ${errorText}`)
+      }
+
+      const data = await response.json()
+      console.log("OTP response data:", data)
+
+      // Check for different possible success indicators
+      if (data.payment_status === "SUCCESS" || data.status === "SUCCESS" || 
+          (data.data && data.data.payment_status === "SUCCESS") ||
+          data.action === "COMPLETE" ||
+          data.authenticate_status === "SUCCESS") {
+        console.log("Payment successful, redirecting...")
+        clearCart()
+        router.push(`/payment/success?order_id=${paymentSession?.cashfree_order_id}`)
+      } else if (data.payment_status === "FAILED" || data.status === "FAILED" || 
+                 data.authenticate_status === "FAILED") {
+        setError(data.message || data.error_description || data.payment_message || "Payment failed")
+      } else {
+        // Handle other statuses or unexpected responses
+        console.log("Unexpected OTP response:", data)
+        
+        // Try to check payment status as fallback
+        try {
+          console.log("Checking payment status as fallback...")
+          const statusResponse = await checkPaymentStatus(paymentSession?.cashfree_order_id || "")
+          
+          if (statusResponse.payment_status === "SUCCESS") {
+            console.log("Payment confirmed successful via status check")
+            clearCart()
+            router.push(`/payment/success?order_id=${paymentSession?.cashfree_order_id}`)
+            return
           }
-        })
-        .catch((error: any) => {
-          reject(new Error(error.message || "Payment processing failed"))
-        })
-    })
+        } catch (statusError) {
+          console.error("Failed to check payment status:", statusError)
+        }
+        
+        setError(data.message || data.error_description || 
+                `OTP verification completed with status: ${data.payment_status || data.status || 'Unknown'}`)
+      }
+    } catch (error: any) {
+      console.error("OTP verification error:", error)
+      setError(error.message || "OTP verification failed. Please try again.")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+
+  const formatCardNumber = (value: string) => {
+    const v = value.replace(/\s+/g, "").replace(/[^0-9]/gi, "")
+    const matches = v.match(/\d{4,16}/g)
+    const match = (matches && matches[0]) || ""
+    const parts = []
+    for (let i = 0, len = match.length; i < len; i += 4) {
+      parts.push(match.substring(i, i + 4))
+    }
+    if (parts.length) {
+      return parts.join(" ")
+    } else {
+      return v
+    }
+  }
+
+  const handleCardInputChange = (field: string, value: string) => {
+    if (field === "card_number") {
+      value = formatCardNumber(value)
+    } else if (field === "card_expiry_mm") {
+      value = value.replace(/[^0-9]/g, "").slice(0, 2)
+      // Validate month (01-12)
+      if (value.length === 2) {
+        const month = parseInt(value)
+        if (month < 1 || month > 12) {
+          return // Don't update if invalid month
+        }
+      }
+    } else if (field === "card_expiry_yy") {
+      value = value.replace(/[^0-9]/g, "").slice(0, 2)
+    } else if (field === "card_cvv") {
+      value = value.replace(/[^0-9]/g, "").slice(0, 4)
+    }
+
+    setCardForm((prev) => ({ ...prev, [field]: value }))
+  }
+
+  const handleCashfreePayment = async (session: PaymentSession) => {
+    setShowCardForm(true)
   }
 
   const handlePlaceOrder = async () => {
@@ -267,20 +490,16 @@ export function CheckoutPage() {
       if (!order) {
         throw new Error("Failed to create order")
       }
-
+      console.log("Order created:", order)
       if (paymentMethod === "online") {
         // Create payment session
         const session = await createPaymentSession(order.id)
+        console.log("Payment session created:", session)
         setPaymentSession(session)
+        console.log("Payment session data:", session)
 
-        // Process payment with Cashfree
-        await handleCashfreePayment(session)
-
-        // Clear cart after successful payment
-        clearCart()
-
-        // Redirect to success page
-        router.push(`/payment/success?order_id=${order.id}`)
+        // Show custom card form instead of redirecting
+        setShowCardForm(true)
       } else {
         // For COD, just redirect to success page
         clearCart()
@@ -599,6 +818,155 @@ export function CheckoutPage() {
             </Card>
           </div>
         </div>
+        {/* Custom Card Payment Form */}
+        {showCardForm && paymentSession && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+            <Card className="w-full max-w-md">
+              <CardHeader>
+                <CardTitle>Enter Card Details</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {error && (
+                  <Alert className="border-red-200 bg-red-50">
+                    <AlertDescription className="text-red-800">{error}</AlertDescription>
+                  </Alert>
+                )}
+                
+                <div>
+                  <Label htmlFor="card_number">Card Number</Label>
+                  <Input
+                    id="card_number"
+                    placeholder="1234 5678 9012 3456"
+                    value={cardForm.card_number}
+                    onChange={(e) => handleCardInputChange("card_number", e.target.value)}
+                    maxLength={19}
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="card_holder_name">Cardholder Name</Label>
+                  <Input
+                    id="card_holder_name"
+                    placeholder="John Doe"
+                    value={cardForm.card_holder_name}
+                    onChange={(e) => handleCardInputChange("card_holder_name", e.target.value)}
+                  />
+                </div>
+
+                <div className="grid grid-cols-3 gap-4">
+                  <div>
+                    <Label htmlFor="card_expiry_mm">Month</Label>
+                    <Input
+                      id="card_expiry_mm"
+                      placeholder="MM"
+                      value={cardForm.card_expiry_mm}
+                      onChange={(e) => handleCardInputChange("card_expiry_mm", e.target.value)}
+                      maxLength={2}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="card_expiry_yy">Year</Label>
+                    <Input
+                      id="card_expiry_yy"
+                      placeholder="YY"
+                      value={cardForm.card_expiry_yy}
+                      onChange={(e) => handleCardInputChange("card_expiry_yy", e.target.value)}
+                      maxLength={2}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="card_cvv">CVV</Label>
+                    <Input
+                      id="card_cvv"
+                      placeholder="123"
+                      value={cardForm.card_cvv}
+                      onChange={(e) => handleCardInputChange("card_cvv", e.target.value)}
+                      maxLength={4}
+                    />
+                  </div>
+                </div>
+
+                <div className="flex gap-3">
+                  <Button
+                    variant="outline"
+                    className="flex-1"
+                    onClick={() => {
+                      setShowCardForm(false)
+                      setPaymentSession(null)
+                      setError("")
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    className="flex-1"
+                    onClick={() => handleCustomPayment(paymentSession)}
+                    disabled={
+                      loading ||
+                      !cardForm.card_number ||
+                      !cardForm.card_holder_name ||
+                      !cardForm.card_expiry_mm ||
+                      !cardForm.card_expiry_yy ||
+                      !cardForm.card_cvv
+                    }
+                  >
+                    {loading ? "Processing..." : "Pay Now"}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* OTP Verification Form */}
+        {showOtpForm && otpData && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+            <Card className="w-full max-w-md">
+              <CardHeader>
+                <CardTitle>Enter OTP</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {error && (
+                  <Alert className="border-red-200 bg-red-50">
+                    <AlertDescription className="text-red-800">{error}</AlertDescription>
+                  </Alert>
+                )}
+                
+                <p className="text-sm text-gray-600">Please enter the OTP sent to your registered mobile number</p>
+
+                <div>
+                  <Label htmlFor="otp">OTP</Label>
+                  <Input
+                    id="otp"
+                    placeholder="Enter 6-digit OTP"
+                    value={otp}
+                    onChange={(e) => setOtp(e.target.value.replace(/[^0-9]/g, "").slice(0, 6))}
+                    maxLength={6}
+                  />
+                </div>
+
+                <div className="flex gap-3">
+                  <Button
+                    variant="outline"
+                    className="flex-1"
+                    onClick={() => {
+                      setShowOtpForm(false)
+                      setShowCardForm(true)  
+                      setOtp("")
+                      setOtpData(null)
+                      setError("")
+                    }}
+                  >
+                    Back
+                  </Button>
+                  <Button className="flex-1" onClick={handleOtpSubmit} disabled={loading || otp.length !== 6}>
+                    {loading ? "Verifying..." : "Verify OTP"}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
       </div>
     </div>
   )

@@ -5,7 +5,7 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useCart } from "@/hooks/use-cart"
 import { useAuth } from "@/hooks/use-auth"
-import { formatCurrency, showToast } from "@/lib/utils"
+import { formatCurrency } from "@/lib/utils"
 
 export function CartPage() {
   const router = useRouter()
@@ -13,38 +13,20 @@ export function CartPage() {
   const { isAuthenticated } = useAuth()
 
   const updateQuantity = async (itemId: number, newQuantity: number) => {
-    try {
-      if (newQuantity === 0) {
-        await removeFromCart(itemId)
-        showToast("Item removed from cart", "success")
-      } else {
-        await updateCartItem(itemId, newQuantity)
-      }
-    } catch (error) {
-      console.error("Failed to update cart:", error)
-      showToast("Failed to update cart", "error")
+    if (newQuantity === 0) {
+      await removeFromCart(itemId)
+    } else {
+      await updateCartItem(itemId, newQuantity)
     }
   }
 
   const removeItem = async (itemId: number) => {
-    try {
-      await removeFromCart(itemId)
-      showToast("Item removed from cart", "success")
-    } catch (error) {
-      console.error("Failed to remove item:", error)
-      showToast("Failed to remove item", "error")
-    }
+    await removeFromCart(itemId)
   }
 
   const handleClearCart = async () => {
     if (window.confirm("Are you sure you want to clear your cart?")) {
-      try {
-        await clearCart()
-        showToast("Cart cleared", "success")
-      } catch (error) {
-        console.error("Failed to clear cart:", error)
-        showToast("Failed to clear cart", "error")
-      }
+      await clearCart()
     }
   }
 
@@ -225,7 +207,8 @@ export function CartPage() {
         </div>
 
         {/* Checkout Button - Fixed at bottom */}
-        <div className="bg-white border-t p-4 shadow-lg">
+        
+        <div className="fixed bottom-0 left-0 right-0 bg-white border-t p-4 shadow-lg">
           <div className="max-w-md mx-auto">
             <button
               onClick={() => router.push("/checkout")}

@@ -3,6 +3,12 @@ from .models import Order, OrderItem, OrderStatusHistory
 from products.serializers import ProductListSerializer, ProductVariantSerializer
 from accounts.serializers import AddressSerializer
 
+class OrderItemCreateSerializer(serializers.Serializer):
+    product_id = serializers.IntegerField()
+    variant_id = serializers.IntegerField(required=False, allow_null=True)
+    quantity = serializers.IntegerField(min_value=1)
+    price = serializers.DecimalField(max_digits=10, decimal_places=2)
+
 class OrderItemSerializer(serializers.ModelSerializer):
     product = ProductListSerializer(read_only=True)
     variant = ProductVariantSerializer(read_only=True)
@@ -32,4 +38,10 @@ class OrderSerializer(serializers.ModelSerializer):
 class CreateOrderSerializer(serializers.Serializer):
     address_id = serializers.IntegerField()
     payment_method = serializers.ChoiceField(choices=Order.PAYMENT_METHOD_CHOICES)
-    notes = serializers.CharField(required=False, allow_blank=True)
+    notes = serializers.CharField(required=False, allow_blank=True, default='')
+    items = OrderItemCreateSerializer(many=True)  # Add this line
+
+    def validate_items(self, value):
+        if not value:
+            raise serializers.ValidationError("At least one item is required")
+        return value

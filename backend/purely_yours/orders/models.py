@@ -33,6 +33,7 @@ class Order(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='orders')
     order_number = models.CharField(max_length=20, unique=True)
     
+    
     # Order Status
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     payment_status = models.CharField(max_length=20, choices=PAYMENT_STATUS_CHOICES, default='pending')
