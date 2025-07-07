@@ -1,4 +1,4 @@
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://192.168.0.161:8000/api"
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://192.168.229.169:8000/api"
 
 // API client with authentication and error handling
 class ApiClient {
@@ -45,7 +45,7 @@ class ApiClient {
     }
 
     if (this.token) {
-      headers['authorization'] = `Bearer ${this.token}`
+      headers["authorization"] = `Bearer ${this.token}`
     }
 
     const config: RequestInit = {
@@ -516,7 +516,7 @@ class ApiClient {
     }
   }
 
-  async getOrder(orderId: number) {
+  async getOrder(orderId: String) {
     if (!orderId) {
       throw new Error("Order ID is required")
     }
@@ -585,6 +585,41 @@ class ApiClient {
     }
 
     return this.request("/payments/create-session/", {
+      method: "POST",
+      body: JSON.stringify(data),
+    })
+  }
+
+  async processCardPayment(data: {
+    payment_session_id: string
+    card_data: {
+      card_number: string
+      card_expiry_mm: string
+      card_expiry_yy: string
+      card_cvv: string
+      card_holder_name: string
+    }
+  }) {
+    if (!data?.payment_session_id || !data?.card_data) {
+      throw new Error("Payment session ID and card data are required")
+    }
+
+    return this.request("/payments/process-card-payment/", {
+      method: "POST",
+      body: JSON.stringify(data),
+    })
+  }
+
+  async verifyPaymentOTP(data: {
+    otp_url: string
+    otp: string
+    payment_session_id: string
+  }) {
+    if (!data?.otp_url || !data?.otp || !data?.payment_session_id) {
+      throw new Error("OTP URL, OTP, and payment session ID are required")
+    }
+
+    return this.request("/payments/verify-otp/", {
       method: "POST",
       body: JSON.stringify(data),
     })

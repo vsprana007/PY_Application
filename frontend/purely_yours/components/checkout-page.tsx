@@ -20,12 +20,6 @@ import { apiClient } from "@/lib/api"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
-declare global {
-  interface Window {
-    Cashfree: any
-  }
-}
-
 interface Address {
   id: number
   type: string
@@ -62,7 +56,6 @@ export function CheckoutPage() {
   const [showAddressForm, setShowAddressForm] = useState(false)
   const [editingAddress, setEditingAddress] = useState<Address | null>(null)
   const [paymentSession, setPaymentSession] = useState<PaymentSession | null>(null)
-  const [cashfreeLoaded, setCashfreeLoaded] = useState(false)
   const [processingPayment, setProcessingPayment] = useState(false)
 
   const [addressForm, setAddressForm] = useState({
@@ -89,19 +82,6 @@ export function CheckoutPage() {
     card_holder_name: "",
   })
   const [otp, setOtp] = useState("")
-
-  // Load Cashfree SDK
-  useEffect(() => {
-    const script = document.createElement("script")
-    script.src = "https://sdk.cashfree.com/js/v3/cashfree.js"
-    script.async = true
-    script.onload = () => setCashfreeLoaded(true)
-    document.head.appendChild(script)
-
-    return () => {
-      document.head.removeChild(script)
-    }
-  }, [])
 
   useEffect(() => {
     if (user) {
@@ -200,18 +180,18 @@ export function CheckoutPage() {
 
     try {
       // Prepare cart items for the order
-      const orderItems = cart.items.map(item => ({
+      const orderItems = cart.items.map((item) => ({
         product_id: item.product.id,
         variant_id: item.variant?.id || null,
         quantity: item.quantity,
-        price: item.variant?.price ?? item.product.price
+        price: item.variant?.price ?? item.product.price,
       }))
 
       const response = await apiClient.createOrder({
         address_id: selectedAddress,
         payment_method: paymentMethod,
         notes: orderNotes,
-        items: orderItems
+        items: orderItems,
       })
 
       if (response.success) {
@@ -224,60 +204,21 @@ export function CheckoutPage() {
     }
   }
 
-  const createPaymentSession = async (orderId: number) => {
-    try {
-      const response = await apiClient.request("/payments/create-session/", {
-        method: "POST",
-        body: JSON.stringify({
-          order_id: orderId,
-          return_url: `${window.location.origin}/payment/success`,
-          notify_url: `${process.env.NEXT_PUBLIC_API_URL}/payments/webhook/`,
-        }),
-      })
-
-      if (response.success) {
-        return response.data
-      } else {
-        throw new Error(response.message || "Failed to create payment session")
-      }
-    } catch (error: any) {
-      throw new Error(error.message || "Failed to create payment session")
-    }
-  }
-
-  const checkPaymentStatus = async (orderId: string) => {
-    try {
-      const response = await apiClient.request(`/payments/status/${orderId}/`, {
-        method: "GET",
-      })
-      
-      if (response.success) {
-        return response.data
-      } else {
-        throw new Error(response.message || "Failed to check payment status")
-      }
-    } catch (error: any) {
-      console.error("Error checking payment status:", error)
-      throw error
-    }
-  }
-
-  const handleCustomPayment = async (session: PaymentSession) => {
-    setLoading(true)
-    setError("")
-    
-    // Validate session data
-    if (!session || !session.payment_session_id) {
-      setError("Invalid payment session. Please try again.")
-      setLoading(false)
+  const handleCardPayment = async () => {
+    if (!paymentSession) {
+      setError("Payment session not found")
       return
     }
 
     // Validate card form data
-    if (!cardForm.card_number || !cardForm.card_holder_name || 
-        !cardForm.card_expiry_mm || !cardForm.card_expiry_yy || !cardForm.card_cvv) {
+    if (
+      !cardForm.card_number ||
+      !cardForm.card_holder_name ||
+      !cardForm.card_expiry_mm ||
+      !cardForm.card_expiry_yy ||
+      !cardForm.card_cvv
+    ) {
       setError("Please fill in all card details.")
-      setLoading(false)
       return
     }
 
@@ -285,65 +226,49 @@ export function CheckoutPage() {
     const cardNumber = cardForm.card_number.replace(/\s/g, "")
     if (cardNumber.length < 13 || cardNumber.length > 19) {
       setError("Please enter a valid card number.")
-      setLoading(false)
       return
     }
 
     // Validate expiry month
-    const month = parseInt(cardForm.card_expiry_mm)
+    const month = Number.parseInt(cardForm.card_expiry_mm)
     if (month < 1 || month > 12) {
       setError("Please enter a valid expiry month (01-12).")
-      setLoading(false)
       return
     }
 
     // Validate CVV
     if (cardForm.card_cvv.length < 3 || cardForm.card_cvv.length > 4) {
       setError("Please enter a valid CVV.")
-      setLoading(false)
       return
     }
-    
+
+    setLoading(true)
+    setError("")
+
     try {
-      const response = await fetch("https://sandbox.cashfree.com/pg/orders/sessions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-version": "2023-08-01",
-        },
-        body: JSON.stringify({
-          payment_session_id: session.payment_session_id,
-          payment_method: {
-            card: {
-              channel: "post",
-              card_number: cardNumber,
-              card_expiry_mm: cardForm.card_expiry_mm,
-              card_expiry_yy: cardForm.card_expiry_yy,
-              card_cvv: cardForm.card_cvv,
-              card_holder_name: cardForm.card_holder_name,
-            },
-          },
-        }),
+      const response = await apiClient.processCardPayment({
+        payment_session_id: paymentSession.payment_session_id,
+        card_data: cardForm,
       })
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
-
-      const data = await response.json()
-      console.log("Payment response data:", data) 
-      if (data.data.url) {
-        // OTP required
-        setOtpData(data.data)
-        setShowOtpForm(true)
-        setShowCardForm(false)
-      } else if (data.payment_status === "SUCCESS") {
-        // Payment successful
-        clearCart()
-        router.push(`/payment/success?order_id=${session.cashfree_order_id}`)
+      if (response.success) {
+        if (response.requires_otp) {
+          // OTP required
+          setOtpData({
+            otp_url: response.otp_url,
+            payment_session_id: paymentSession.payment_session_id,
+          })
+          setShowOtpForm(true)
+          setShowCardForm(false)
+        } else if (response.payment_status === "SUCCESS") {
+          // Payment successful
+          clearCart()
+          router.push(`/payment/success?order_id=${response.order_id}`)
+        } else {
+          setError(response.message || "Payment processing failed")
+        }
       } else {
-        // Handle other payment statuses
-        setError(data.message || `Payment failed with status: ${data.payment_status || 'Unknown'}`)
+        setError(response.message || "Payment processing failed")
       }
     } catch (error: any) {
       console.error("Payment processing error:", error)
@@ -361,64 +286,19 @@ export function CheckoutPage() {
 
     setLoading(true)
     setError("")
-    
+
     try {
-      const response = await fetch(`${otpData.url}`, {
-        method: "POST",
-        headers: {
-          "accept": "*/*",
-          "Content-Type": "application/json",
-          "x-api-version": "2023-08-01",
-        },
-        body: JSON.stringify({
-          action: "SUBMIT_OTP",
-          otp: otp,
-        }),
+      const response = await apiClient.verifyPaymentOTP({
+        otp_url: otpData.otp_url,
+        otp: otp,
+        payment_session_id: otpData.payment_session_id,
       })
-      
-      console.log("OTP response status:", response.status, response.statusText)
-      
-      if (!response.ok) {
-        const errorText = await response.text()
-        console.error("OTP response error:", errorText)
-        throw new Error(`HTTP error! status: ${response.status} - ${errorText}`)
-      }
 
-      const data = await response.json()
-      console.log("OTP response data:", data)
-
-      // Check for different possible success indicators
-      if (data.payment_status === "SUCCESS" || data.status === "SUCCESS" || 
-          (data.data && data.data.payment_status === "SUCCESS") ||
-          data.action === "COMPLETE" ||
-          data.authenticate_status === "SUCCESS") {
-        console.log("Payment successful, redirecting...")
+      if (response.success && response.payment_status === "SUCCESS") {
         clearCart()
-        router.push(`/payment/success?order_id=${paymentSession?.cashfree_order_id}`)
-      } else if (data.payment_status === "FAILED" || data.status === "FAILED" || 
-                 data.authenticate_status === "FAILED") {
-        setError(data.message || data.error_description || data.payment_message || "Payment failed")
+        router.push(`/payment/success?order_id=${response.order_id}`)
       } else {
-        // Handle other statuses or unexpected responses
-        console.log("Unexpected OTP response:", data)
-        
-        // Try to check payment status as fallback
-        try {
-          console.log("Checking payment status as fallback...")
-          const statusResponse = await checkPaymentStatus(paymentSession?.cashfree_order_id || "")
-          
-          if (statusResponse.payment_status === "SUCCESS") {
-            console.log("Payment confirmed successful via status check")
-            clearCart()
-            router.push(`/payment/success?order_id=${paymentSession?.cashfree_order_id}`)
-            return
-          }
-        } catch (statusError) {
-          console.error("Failed to check payment status:", statusError)
-        }
-        
-        setError(data.message || data.error_description || 
-                `OTP verification completed with status: ${data.payment_status || data.status || 'Unknown'}`)
+        setError(response.message || "OTP verification failed")
       }
     } catch (error: any) {
       console.error("OTP verification error:", error)
@@ -427,7 +307,6 @@ export function CheckoutPage() {
       setLoading(false)
     }
   }
-
 
   const formatCardNumber = (value: string) => {
     const v = value.replace(/\s+/g, "").replace(/[^0-9]/gi, "")
@@ -451,7 +330,7 @@ export function CheckoutPage() {
       value = value.replace(/[^0-9]/g, "").slice(0, 2)
       // Validate month (01-12)
       if (value.length === 2) {
-        const month = parseInt(value)
+        const month = Number.parseInt(value)
         if (month < 1 || month > 12) {
           return // Don't update if invalid month
         }
@@ -463,10 +342,6 @@ export function CheckoutPage() {
     }
 
     setCardForm((prev) => ({ ...prev, [field]: value }))
-  }
-
-  const handleCashfreePayment = async (session: PaymentSession) => {
-    setShowCardForm(true)
   }
 
   const handlePlaceOrder = async () => {
@@ -491,15 +366,22 @@ export function CheckoutPage() {
         throw new Error("Failed to create order")
       }
       console.log("Order created:", order)
+
       if (paymentMethod === "online") {
         // Create payment session
-        const session = await createPaymentSession(order.id)
-        console.log("Payment session created:", session)
-        setPaymentSession(session)
-        console.log("Payment session data:", session)
+        const sessionResponse = await apiClient.createPaymentSession({
+          order_id: order.id,
+          return_url: `${window.location.origin}/payment/success`,
+          notify_url: `${process.env.NEXT_PUBLIC_API_URL}/payments/webhook/`,
+        })
 
-        // Show custom card form instead of redirecting
-        setShowCardForm(true)
+        if (sessionResponse.success) {
+          console.log("Payment session created:", sessionResponse.data)
+          setPaymentSession(sessionResponse.data)
+          setShowCardForm(true)
+        } else {
+          throw new Error(sessionResponse.message || "Failed to create payment session")
+        }
       } else {
         // For COD, just redirect to success page
         clearCart()
@@ -513,11 +395,12 @@ export function CheckoutPage() {
     }
   }
 
-  const subtotal = cart?.items?.reduce((sum, item) => {
-    // Use variant price if available, otherwise fallback to product price
-    const price = item.variant?.price ?? item.product.price
-    return sum + price * item.quantity
-  }, 0) ?? 0
+  const subtotal =
+    cart?.items?.reduce((sum, item) => {
+      // Use variant price if available, otherwise fallback to product price
+      const price = item.variant?.price ?? item.product.price
+      return sum + price * item.quantity
+    }, 0) ?? 0
   const shippingCost = subtotal >= 500 ? 0 : 50
   const taxAmount = subtotal * 0.18
   const total = subtotal + shippingCost + taxAmount
@@ -754,19 +637,22 @@ export function CheckoutPage() {
               <CardContent className="space-y-4">
                 {/* Cart Items */}
                 <div className="space-y-3">
-                  {cart && cart.items.map((item) => (
-                    <div
-                      key={`${item.product.id}-${item.variant?.id || "no-variant"}`}
-                      className="flex justify-between text-sm"
-                    >
-                      <div className="flex-1">
-                        <p className="font-medium">{item.product.name}</p>
-                        {item.variant && <p className="text-gray-500">{item.variant.name}</p>}
-                        <p className="text-gray-500">Qty: {item.quantity}</p>
+                  {cart &&
+                    cart.items.map((item) => (
+                      <div
+                        key={`${item.product.id}-${item.variant?.id || "no-variant"}`}
+                        className="flex justify-between text-sm"
+                      >
+                        <div className="flex-1">
+                          <p className="font-medium">{item.product.name}</p>
+                          {item.variant && <p className="text-gray-500">{item.variant.name}</p>}
+                          <p className="text-gray-500">Qty: {item.quantity}</p>
+                        </div>
+                        <p className="font-medium">
+                          ₹{((item.variant?.price ?? item.product.price) * item.quantity).toFixed(2)}
+                        </p>
                       </div>
-                      <p className="font-medium">₹{((item.variant?.price ?? item.product.price) * item.quantity).toFixed(2)}</p>
-                    </div>
-                  ))}
+                    ))}
                 </div>
 
                 <Separator />
@@ -818,6 +704,7 @@ export function CheckoutPage() {
             </Card>
           </div>
         </div>
+
         {/* Custom Card Payment Form */}
         {showCardForm && paymentSession && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
@@ -831,7 +718,7 @@ export function CheckoutPage() {
                     <AlertDescription className="text-red-800">{error}</AlertDescription>
                   </Alert>
                 )}
-                
+
                 <div>
                   <Label htmlFor="card_number">Card Number</Label>
                   <Input
@@ -889,7 +776,7 @@ export function CheckoutPage() {
                 <div className="flex gap-3">
                   <Button
                     variant="outline"
-                    className="flex-1"
+                    className="flex-1 bg-transparent"
                     onClick={() => {
                       setShowCardForm(false)
                       setPaymentSession(null)
@@ -900,7 +787,7 @@ export function CheckoutPage() {
                   </Button>
                   <Button
                     className="flex-1"
-                    onClick={() => handleCustomPayment(paymentSession)}
+                    onClick={handleCardPayment}
                     disabled={
                       loading ||
                       !cardForm.card_number ||
@@ -931,7 +818,7 @@ export function CheckoutPage() {
                     <AlertDescription className="text-red-800">{error}</AlertDescription>
                   </Alert>
                 )}
-                
+
                 <p className="text-sm text-gray-600">Please enter the OTP sent to your registered mobile number</p>
 
                 <div>
@@ -948,10 +835,10 @@ export function CheckoutPage() {
                 <div className="flex gap-3">
                   <Button
                     variant="outline"
-                    className="flex-1"
+                    className="flex-1 bg-transparent"
                     onClick={() => {
                       setShowOtpForm(false)
-                      setShowCardForm(true)  
+                      setShowCardForm(true)
                       setOtp("")
                       setOtpData(null)
                       setError("")

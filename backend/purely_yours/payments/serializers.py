@@ -7,14 +7,19 @@ class PaymentSessionSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = PaymentSession
-        fields = [
-            'id', 'order', 'order_number', 'order_amount', 'cashfree_order_id',
-            'payment_session_id', 'payment_status', 'payment_method',
-            'transaction_id', 'created_at', 'updated_at'
-        ]
-        read_only_fields = ['cashfree_order_id', 'payment_session_id', 'transaction_id']
+        fields = ['id', 'order', 'order_number', 'order_amount', 'cashfree_order_id', 
+                 'payment_session_id', 'payment_status', 'transaction_id', 'created_at', 'updated_at']
 
 class CreatePaymentSessionSerializer(serializers.Serializer):
     order_id = serializers.UUIDField()
     return_url = serializers.URLField(required=False)
     notify_url = serializers.URLField(required=False)
+
+class ProcessCardPaymentSerializer(serializers.Serializer):
+    payment_session_id = serializers.CharField()
+    card_data = serializers.DictField()
+
+class VerifyOTPSerializer(serializers.Serializer):
+    otp_url = serializers.URLField()
+    otp = serializers.CharField(max_length=6)
+    payment_session_id = serializers.CharField()

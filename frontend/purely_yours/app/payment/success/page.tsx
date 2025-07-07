@@ -58,7 +58,7 @@ export default function PaymentSuccess() {
 
   const fetchOrder = async () => {
     try {
-      const response = await apiClient.getOrder(Number.parseInt(orderId!))
+      const response = await apiClient.getOrder(orderId!)
       if (response) {
         setOrder(response)
       } else {
