@@ -12,14 +12,29 @@ interface WishlistItem {
     id: number
     name: string
     slug: string
-    price: number
-    original_price: number
+    price: string | number
+    original_price: string | number
+    discount_percentage?: number
     primary_image?: string
-    stock_quantity: number
+    collections?: Array<{
+      id: number
+      name: string
+      slug: string
+      description: string
+      image?: string | null
+      product_count: number
+      show_on_homepage: boolean
+    }>
+    tags?: Array<{
+      id: number
+      name: string
+      slug: string
+    }>
     average_rating?: number
     review_count?: number
+    stock_quantity: number
   }
-  added_at: string
+  created_at: string
 }
 
 interface Wishlist {
@@ -37,7 +52,7 @@ interface WishlistContextType {
   refreshWishlist: () => Promise<void>
   isInWishlist: (productId: number) => boolean
   getWishlistItem: (productId: number) => WishlistItem | null
-  clearWishlist: () => void
+  clearWishlist: () => Promise<any>
 }
 
 const WishlistContext = createContext<WishlistContextType | undefined>(undefined)
@@ -151,6 +166,38 @@ export function WishlistProvider({ children }: { children: ReactNode }) {
       setIsLoading(false)
     }
   }
+  const clearWishlist = async () => {
+    try {
+      setIsLoading(true)
+      const response = await apiClient.clearWishlist()
+
+      if (response.success) {
+        setWishlist(response.wishlist)
+        toast({
+          title: "Success",
+          description: "Wishlist cleared successfully",
+        })
+      } else {
+        toast({
+          title: "Error",
+          description: response.message || ERROR_MESSAGES.VALIDATION_ERROR,
+          variant: "destructive",
+        })
+      }
+
+      return response
+    } catch (error: any) {
+      const errorMessage = error.message || ERROR_MESSAGES.NETWORK_ERROR
+      toast({
+        title: "Error",
+        description: errorMessage,
+        variant: "destructive",
+      })
+      throw error
+    } finally {
+      setIsLoading(false)
+    }
+  }
 
   const toggleWishlist = async (productId: number) => {
     if (!isAuthenticated) {
@@ -200,17 +247,14 @@ export function WishlistProvider({ children }: { children: ReactNode }) {
 
   const isInWishlist = (productId: number) => {
     if (!wishlist) return false
-    return wishlist.items.some((item) => item.product.id === productId)
+    return wishlist.items.some((item) => Number(item.product.id) === Number(productId))
   }
 
   const getWishlistItem = (productId: number) => {
     if (!wishlist) return null
-    return wishlist.items.find((item) => item.product.id === productId) || null
+    return wishlist.items.find((item) => Number(item.product.id) === Number(productId)) || null
   }
 
-  const clearWishlist = () => {
-    setWishlist(null)
-  }
 
   return (
     <WishlistContext.Provider

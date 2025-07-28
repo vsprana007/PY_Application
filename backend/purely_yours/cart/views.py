@@ -132,3 +132,4 @@ def clear_cart(request):
             'success': True,
             'message': 'Cart is already empty'
         })
+

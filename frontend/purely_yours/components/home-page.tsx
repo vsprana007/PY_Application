@@ -11,32 +11,89 @@ import Link from "next/link"
 import type { Product, Category } from "@/hooks/use-products"
 
 export function HomePage() {
-  const [selectedCategory, setSelectedCategory] = useState<string>("female-wellness") // Default category
-  const { categories, products, isLoading, error, fetchCategoryProducts, getFeaturedProducts, getBestsellers } = useProducts()
+  const [selectedCategory, setSelectedCategory] = useState<string>("") // Default category
+  const { categories, products, isLoading, error, fetchCategoryProducts, getFeaturedProducts, getBestsellers, getValueCombos } = useProducts()
   const [bestsellers, setBestsellers] = useState<Product[]>([])
   const [featuredProducts, setFeaturedProducts] = useState<Product[]>([])
+  const [valueCombos, setValueCombos] = useState<Product[]>([])
+  const [loadingBestsellers, setLoadingBestsellers] = useState(true)
+  const [loadingFeatured, setLoadingFeatured] = useState(true)
+  const [loadingValueCombos, setLoadingValueCombos] = useState(true)
 
   // Set first category as default when categories load
   useEffect(() => {
-      if (selectedCategory) {
-      fetchCategoryProducts(selectedCategory)
-      }
-  }, [selectedCategory, fetchCategoryProducts])
+    if (categories.length > 0 && !selectedCategory) {
+      setSelectedCategory(categories[0].slug)
+    }
+  }, [categories, selectedCategory])
+
   useEffect(() => {
-        async function fetchBestsellers() {
+    if (selectedCategory) {
+      fetchCategoryProducts(selectedCategory)
+    }
+  }, [selectedCategory, fetchCategoryProducts])
+
+  useEffect(() => {
+    async function fetchBestsellers() {
+      try {
+        setLoadingBestsellers(true)
         const products = await getBestsellers()
         setBestsellers(products)
-        }
-        fetchBestsellers()
+      } catch (error) {
+        console.error("Failed to fetch bestsellers:", error)
+      } finally {
+        setLoadingBestsellers(false)
+      }
+    }
+    fetchBestsellers()
   }, [getBestsellers])
 
   useEffect(() => {
-        async function fetchFeatured() {
+    async function fetchFeatured() {
+      try {
+        setLoadingFeatured(true)
         const products = await getFeaturedProducts()
         setFeaturedProducts(products)
-        }
-        fetchFeatured()
-    }, [getFeaturedProducts])
+      } catch (error) {
+        console.error("Failed to fetch featured products:", error)
+      } finally {
+        setLoadingFeatured(false)
+      }
+    }
+    fetchFeatured()
+  }, [getFeaturedProducts])
+
+  useEffect(() => {
+    async function fetchValueCombos() {
+      try {
+        setLoadingValueCombos(true)
+        const products = await getValueCombos()
+        setValueCombos(products)
+      } catch (error) {
+        console.error("Failed to fetch value combos:", error)
+      } finally {
+        setLoadingValueCombos(false)
+      }
+    }
+    fetchValueCombos()
+  }, [getValueCombos])
+
+  // Show error message if there's an error
+  if (error) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="text-center">
+          <p className="text-red-500 mb-4">{error}</p>
+          <button 
+            onClick={() => window.location.reload()} 
+            className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   
 
@@ -70,53 +127,67 @@ export function HomePage() {
       <div className="px-4 sm:px-6 lg:px-8 xl:px-12">
         <h2 className="text-lg sm:text-xl md:text-2xl lg:text-3xl xl:text-4xl font-semibold mb-3">SELECT CATEGORY</h2>
         <div className="flex overflow-x-auto pb-2 gap-2 sm:gap-3 lg:gap-4 hide-scrollbar">
-          {categories.map((category) => (
-            <CategoryButton
-              key={category.id}
-              active={selectedCategory === category.slug}
-              onClick={() => setSelectedCategory(category.slug)}
-            >
-              {category.name}
-            </CategoryButton>
-          ))}
+          {isLoading || categories.length === 0 ? (
+            <div className="flex gap-2">
+              {[...Array(4)].map((_, i) => (
+                <div key={i} className="bg-gray-200 rounded-full h-10 w-32 animate-pulse flex-shrink-0" />
+              ))}
+            </div>
+          ) : (
+            categories.map((category) => (
+              <CategoryButton
+                key={category.id}
+                active={selectedCategory === category.slug}
+                onClick={() => setSelectedCategory(category.slug)}
+              >
+                {category.name}
+              </CategoryButton>
+            ))
+          )}
         </div>
 
         {/* Dynamic Category Products - Responsive Grid */}
         <div className="mt-6">
           <div className="flex justify-between items-center mb-3">
             <h2 className="text-lg sm:text-xl md:text-2xl lg:text-3xl xl:text-4xl font-semibold">
-              {categories.find(cat => cat.slug === selectedCategory)?.name || "Products"}
+              {selectedCategory && categories.find(cat => cat.slug === selectedCategory)?.name || "Products"}
             </h2>
-            <Link href={`/categories/${selectedCategory}`}>
-              <button className="flex items-center text-sm sm:text-base lg:text-lg text-green-600 hover:text-green-700 transition-colors">
-                View all <ChevronRight size={16} />
-              </button>
-            </Link>
+            {selectedCategory && (
+              <Link href={`/categories/${selectedCategory}`}>
+                <button className="flex items-center text-sm sm:text-base lg:text-lg text-green-600 hover:text-green-700 transition-colors">
+                  View all <ChevronRight size={16} />
+                </button>
+              </Link>
+            )}
           </div>
           {isLoading ? (
-          <div className="flex gap-4 overflow-x-auto pb-2 hide-scrollbar">
-            {[...Array(4)].map((_, i) => (
-              <div key={i} className="bg-gray-200 rounded-lg h-64 animate-pulse" />
-            ))}
-          </div>
-        ) : (
-          <div className="flex gap-4 overflow-x-auto pb-2 hide-scrollbar">
-            
-            {products.map((product: Product) => (
-              <div key={product.id} className="flex-shrink-0">
-                <ProductCard
-                  key={product.id}
-                  id={product.slug}
-                  name={product.name}
-                  price={Number(product.price)}
-                  originalPrice={Number(product.original_price)}
-                  discount={product.discount_percentage}
-                  image={product?.primary_image || "/placeholder.svg?height=200&width=200"}
-                />
-              </div>
-            ))}
-          </div>
-        )}
+            <div className="flex gap-4 overflow-x-auto pb-2 hide-scrollbar">
+              {[...Array(4)].map((_, i) => (
+                <div key={i} className="bg-gray-200 rounded-lg h-64 w-56 flex-shrink-0 animate-pulse" />
+              ))}
+            </div>
+          ) : products.length === 0 ? (
+            <div className="text-center py-8 text-gray-500">
+              <p>{selectedCategory ? "No products found in this category." : "Select a category to view products."}</p>
+            </div>
+          ) : (
+            <div className="flex gap-4 overflow-x-auto pb-2 hide-scrollbar">
+              {products.map((product: Product) => (
+                <div key={product.id} className="flex-shrink-0">
+                  <ProductCard
+                    id={product.id}
+                    slug={product.slug}
+                    productId={product.id}
+                    name={product.name}
+                    price={Number(product.price)}
+                    originalPrice={Number(product.original_price)}
+                    discount={product.discount_percentage}
+                    image={product?.primary_image || "/placeholder.svg?height=200&width=200"}
+                  />
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
@@ -172,19 +243,24 @@ export function HomePage() {
           </Link>
         </div>
 
-        {isLoading ? (
+        {loadingBestsellers ? (
           <div className="flex gap-4 overflow-x-auto pb-2 hide-scrollbar">
             {[...Array(4)].map((_, i) => (
               <div key={i} className="bg-gray-200 rounded-lg h-64 w-56 flex-shrink-0 animate-pulse" />
             ))}
+          </div>
+        ) : bestsellers.length === 0 ? (
+          <div className="text-center py-8 text-gray-500">
+            <p>No bestsellers available at the moment.</p>
           </div>
         ) : (
           <div className="flex gap-4 overflow-x-auto pb-2 hide-scrollbar">
             {bestsellers.map((product: Product) => (
               <div key={product.id} className="flex-shrink-0">
                 <ProductCard
-                  key={product.id}
-                  id={product.slug}
+                  id={product.id}
+                  productId={product.id}
+                  slug={product.slug}
                   name={product.name}
                   price={Number(product.price)}
                   originalPrice={Number(product.original_price)}
@@ -208,19 +284,24 @@ export function HomePage() {
           </Link>
         </div>
 
-        {isLoading ? (
+        {loadingFeatured ? (
           <div className="flex gap-4 overflow-x-auto pb-2 hide-scrollbar">
             {[...Array(4)].map((_, i) => (
-              <div key={i} className="bg-gray-200 rounded-lg h-64 animate-pulse" />
+              <div key={i} className="bg-gray-200 rounded-lg h-64 w-56 flex-shrink-0 animate-pulse" />
             ))}
+          </div>
+        ) : featuredProducts.length === 0 ? (
+          <div className="text-center py-8 text-gray-500">
+            <p>No featured products available at the moment.</p>
           </div>
         ) : (
           <div className="flex gap-4 overflow-x-auto pb-2 hide-scrollbar">
             {featuredProducts.map((product: Product) => (
               <div key={product.id} className="flex-shrink-0">
                 <ProductCard
-                  key={product.id}
-                  id={product.slug}
+                  id={product.id}
+                  productId={product.id}
+                  slug={product.slug}
                   name={product.name}
                   price={Number(product.price)}
                   originalPrice={Number(product.original_price)}
@@ -312,16 +393,41 @@ export function HomePage() {
       <div className="px-4 sm:px-6 lg:px-8 xl:px-12 mt-4">
         <div className="flex justify-between items-center mb-3">
           <h2 className="text-lg sm:text-xl md:text-2xl lg:text-3xl xl:text-4xl font-semibold">Value Combos</h2>
-          <Link href="/categories">
-            <button className="flex items-center text-sm sm:text-base lg:text-lg text-green-600">
+          <Link href="/categories/value-combos">
+            <button className="flex items-center text-sm sm:text-base lg:text-lg text-green-600 hover:text-green-700 transition-colors">
               View all <ChevronRight size={16} />
             </button>
           </Link>
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 3xl:grid-cols-8 gap-3 sm:gap-4 lg:gap-6">
-          <ValueComboCard name="Wellness Combo" price={2199} originalPrice={2799} discount={21} />
-          <ValueComboCard name="Immunity Pack" price={1199} originalPrice={1499} discount={20} />
-        </div>
+        
+        {loadingValueCombos ? (
+          <div className="flex gap-4 overflow-x-auto pb-2 hide-scrollbar">
+            {[...Array(4)].map((_, i) => (
+              <div key={i} className="bg-gray-200 rounded-lg h-64 w-56 flex-shrink-0 animate-pulse" />
+            ))}
+          </div>
+        ) : valueCombos.length === 0 ? (
+          <div className="text-center py-8 text-gray-500">
+            <p>No value combos available at the moment.</p>
+          </div>
+        ) : (
+          <div className="flex gap-4 overflow-x-auto pb-2 hide-scrollbar">
+            {valueCombos.map((product: Product) => (
+              <div key={product.id} className="flex-shrink-0">
+                <Link href={`/product/${product.slug}`}>
+                  <ValueComboCard 
+                    id={product.id}
+                    name={product.name} 
+                    price={Number(product.price)} 
+                    originalPrice={Number(product.original_price)} 
+                    discount={product.discount_percentage}
+                    image={product?.primary_image || "/placeholder.svg?height=200&width=200"}
+                  />
+                </Link>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Learn More Banner - Full Width */}

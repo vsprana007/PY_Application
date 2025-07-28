@@ -118,6 +118,8 @@ export function CartProvider({ children }: { children: ReactNode }) {
   }
 
   const addToCart = async (productId: number, variantId?: number, quantity = 1) => {
+    console.log("useCart addToCart called with:", { productId, variantId, quantity })
+    
     if (!isAuthenticated) {
       toast({
         title: "Error",
@@ -139,11 +141,19 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
     try {
       setIsLoading(true)
+      console.log("Calling API addToCart with:", {
+        product_id: productId,
+        variant_id: variantId,
+        quantity,
+      })
+      
       const response = await apiClient.addToCart({
         product_id: productId,
         variant_id: variantId,
         quantity,
       })
+
+      console.log("API addToCart response:", response)
 
       if (safeGet(response, "success")) {
         const cartData = safeGet(response, "cart")
@@ -172,6 +182,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
       return response
     } catch (error: any) {
+      console.error("useCart addToCart error:", error)
       const errorMessage = getErrorMessage(error) || ERROR_MESSAGES.NETWORK_ERROR
       toast({
         title: "Error",

@@ -1,172 +1,124 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Filter, Grid, List } from "lucide-react"
 import { ProductCard } from "./product-card"
+import { useProducts, Product, Category } from "@/hooks/use-products"
+import { useCart } from "@/hooks/use-cart"
+import Link from "next/link"
 
 interface CategoryDetailPageProps {
   categorySlug: string
 }
 
 export function CategoryDetailPage({ categorySlug }: CategoryDetailPageProps) {
+  const { 
+    products, 
+    categories, 
+    isLoading, 
+    error, 
+    hasMore, 
+    fetchCategoryProducts, 
+    fetchCategories, 
+    loadMore 
+  } = useProducts()
+  
+  const { addToCart, isLoading: cartLoading } = useCart()
+  
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid")
   const [sortBy, setSortBy] = useState("popularity")
   const [showFilters, setShowFilters] = useState(false)
   const [selectedFilters, setSelectedFilters] = useState({
     priceRange: [0, 5000],
-    brand: "",
     rating: 0,
     availability: "all",
   })
+  
+  const [category, setCategory] = useState<Category | null>(null)
+  const [filteredProducts, setFilteredProducts] = useState<Product[]>([])
 
-  // Category data mapping
-  const categoryData = {
-    "male-wellness": {
-      name: "Male Wellness",
-      description: "Products specifically designed for men's health and wellness needs",
-      image: "/placeholder.svg?height=200&width=400",
-      totalProducts: 24,
-    },
-    "female-wellness": {
-      name: "Female Wellness",
-      description: "Comprehensive wellness solutions for women's health",
-      image: "/placeholder.svg?height=200&width=400",
-      totalProducts: 32,
-    },
-    "hair-scalp": {
-      name: "Hair & Scalp",
-      description: "Natural hair care and scalp health products",
-      image: "/placeholder.svg?height=200&width=400",
-      totalProducts: 18,
-    },
-    "joint-mobility": {
-      name: "Joint & Mobility",
-      description: "Support for joint health and improved mobility",
-      image: "/placeholder.svg?height=200&width=400",
-      totalProducts: 15,
-    },
-    "gut-digestive": {
-      name: "Gut & Digestive",
-      description: "Digestive health and gut wellness products",
-      image: "/placeholder.svg?height=200&width=400",
-      totalProducts: 21,
-    },
-    "skin-beauty": {
-      name: "Skin & Beauty",
-      description: "Natural skincare and beauty enhancement products",
-      image: "/placeholder.svg?height=200&width=400",
-      totalProducts: 28,
-    },
-    "immunity-detox": {
-      name: "Immunity & Detox",
-      description: "Boost immunity and natural detoxification",
-      image: "/placeholder.svg?height=200&width=400",
-      totalProducts: 19,
-    },
-    "weight-metabolism": {
-      name: "Weight & Metabolism",
-      description: "Healthy weight management and metabolism support",
-      image: "/placeholder.svg?height=200&width=400",
-      totalProducts: 16,
-    },
-    "mind-mood": {
-      name: "Mind & Mood",
-      description: "Mental wellness and mood enhancement products",
-      image: "/placeholder.svg?height=200&width=400",
-      totalProducts: 12,
-    },
-    "sugar-management": {
-      name: "Sugar Management",
-      description: "Natural blood sugar management solutions",
-      image: "/placeholder.svg?height=200&width=400",
-      totalProducts: 8,
-    },
+  // Handle add to cart
+  const handleAddToCart = async (productId: number, event: React.MouseEvent) => {
+    event.preventDefault() // Prevent navigation to product page
+    event.stopPropagation() // Stop event bubbling
+    
+    try {
+      await addToCart(productId, undefined, 1)
+    } catch (error) {
+      console.error('Error adding to cart:', error)
+    }
   }
 
-  const category = categoryData[categorySlug as keyof typeof categoryData] || {
-    name: "Category",
-    description: "Explore our wellness products",
-    image: "/placeholder.svg?height=200&width=400",
-    totalProducts: 0,
+  // Handle buy now
+  const handleBuyNow = async (productId: number, event: React.MouseEvent) => {
+    event.preventDefault() // Prevent navigation to product page
+    event.stopPropagation() // Stop event bubbling
+    
+    try {
+      await addToCart(productId, undefined, 1)
+      // Redirect to checkout
+      window.location.href = '/checkout'
+    } catch (error) {
+      console.error('Error during buy now:', error)
+    }
   }
 
-  // Mock products data - in real app, this would be filtered by category
-  const products = [
-    {
-      id: "1",
-      name: "Premium Wellness Formula",
-      price: 925,
-      originalPrice: 995,
-      discount: 7,
-      image: "/placeholder.svg?height=200&width=200",
-      rating: 4.5,
-      reviews: 128,
-      brand: "Purely Yours",
-      inStock: true,
-    },
-    {
-      id: "2",
-      name: "Natural Health Supplement",
-      price: 1493,
-      originalPrice: 1990,
-      discount: 25,
-      image: "/placeholder.svg?height=200&width=200",
-      rating: 4.7,
-      reviews: 89,
-      brand: "Purely Yours",
-      inStock: true,
-    },
-    {
-      id: "3",
-      name: "Organic Wellness Capsules",
-      price: 789,
-      originalPrice: 895,
-      discount: 12,
-      image: "/placeholder.svg?height=200&width=200",
-      rating: 4.6,
-      reviews: 156,
-      brand: "Purely Yours",
-      inStock: true,
-    },
-    {
-      id: "4",
-      name: "Herbal Health Booster",
-      price: 536,
-      originalPrice: 595,
-      discount: 10,
-      image: "/placeholder.svg?height=200&width=200",
-      rating: 4.4,
-      reviews: 203,
-      brand: "Purely Yours",
-      inStock: false,
-    },
-    {
-      id: "5",
-      name: "Natural Wellness Tea",
-      price: 489,
-      originalPrice: 595,
-      discount: 18,
-      image: "/placeholder.svg?height=200&width=200",
-      rating: 4.3,
-      reviews: 94,
-      brand: "Purely Yours",
-      inStock: true,
-    },
-    {
-      id: "6",
-      name: "Advanced Health Formula",
-      price: 1299,
-      originalPrice: 1599,
-      discount: 19,
-      image: "/placeholder.svg?height=200&width=200",
-      rating: 4.8,
-      reviews: 67,
-      brand: "Purely Yours",
-      inStock: true,
-    },
-  ]
+  // Build filter parameters for API
+  const buildFilterParams = () => {
+    const params: any = {}
+    
+    // Price range
+    if (selectedFilters.priceRange[0] > 0) {
+      params.min_price = selectedFilters.priceRange[0]
+    }
+    if (selectedFilters.priceRange[1] < 5000) {
+      params.max_price = selectedFilters.priceRange[1]
+    }
+    
+    // Stock availability
+    if (selectedFilters.availability === "inStock") {
+      params.in_stock = true
+    }
+    
+    // Sorting
+    if (sortBy === "price-low") {
+      params.ordering = "price"
+    } else if (sortBy === "price-high") {
+      params.ordering = "-price"
+    } else if (sortBy === "rating") {
+      params.ordering = "-average_rating"
+    } else if (sortBy === "newest") {
+      params.ordering = "-created_at"
+    }
+    
+    return params
+  }
 
-  const brands = ["Purely Yours", "Nature's Best", "Herbal Plus", "Organic Care"]
+  useEffect(() => {
+    // Fetch categories first to get category info
+    fetchCategories()
+    
+    // Fetch products for this category with current filters
+    const filterParams = buildFilterParams()
+    fetchCategoryProducts(categorySlug, filterParams)
+  }, [categorySlug, sortBy, selectedFilters, fetchCategories, fetchCategoryProducts])
+
+  useEffect(() => {
+    // Find the current category from the categories list
+    const currentCategory = categories.find(cat => cat.slug === categorySlug)
+    setCategory(currentCategory || null)
+  }, [categories, categorySlug])
+
+  useEffect(() => {
+    // Apply client-side rating filter since it might not be in API
+    let filtered = [...products]
+    
+    if (selectedFilters.rating > 0) {
+      filtered = filtered.filter(product => (product.average_rating || 0) >= selectedFilters.rating)
+    }
+    
+    setFilteredProducts(filtered)
+  }, [products, selectedFilters.rating])
   const sortOptions = [
     { value: "popularity", label: "Popularity" },
     { value: "price-low", label: "Price: Low to High" },
@@ -185,10 +137,59 @@ export function CategoryDetailPage({ categorySlug }: CategoryDetailPageProps) {
   const clearFilters = () => {
     setSelectedFilters({
       priceRange: [0, 5000],
-      brand: "",
       rating: 0,
       availability: "all",
     })
+  }
+
+  const handleLoadMore = () => {
+    if (hasMore && !isLoading) {
+      loadMore()
+    }
+  }
+
+  const handleSortChange = (newSortBy: string) => {
+    setSortBy(newSortBy)
+    // This will trigger the useEffect to refetch products with new sorting
+  }
+
+  // Loading state
+  if (isLoading && filteredProducts.length === 0) {
+    return (
+      <div className="w-full">
+        <div className="bg-white">
+          <div className="w-full h-32 sm:h-48 md:h-64 lg:h-80 xl:h-96 bg-gray-200 animate-pulse"></div>
+        </div>
+        <div className="p-4 sm:p-6 lg:p-8 xl:p-12">
+          <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-4 sm:gap-6 md:gap-8 lg:gap-6 xl:gap-8">
+            {Array.from({ length: 8 }).map((_, index) => (
+              <div key={index} className="flex-shrink-0">
+                <div className="border border-gray-200 rounded-lg p-3 bg-white h-80 animate-pulse">
+                  <div className="w-full h-40 bg-gray-200 rounded mb-2"></div>
+                  <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
+                  <div className="h-3 bg-gray-200 rounded w-1/2"></div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Error state
+  if (error && filteredProducts.length === 0) {
+    return (
+      <div className="w-full p-8 text-center">
+        <p className="text-red-600 mb-4">{error}</p>
+        <button 
+          onClick={() => fetchCategoryProducts(categorySlug)}
+          className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors"
+        >
+          Try Again
+        </button>
+      </div>
+    )
   }
 
   return (
@@ -197,20 +198,20 @@ export function CategoryDetailPage({ categorySlug }: CategoryDetailPageProps) {
       <div className="bg-white">
         <div className="relative">
           <img
-            src={category.image || "/placeholder.svg"}
-            alt={category.name}
+            src={category?.image || "/placeholder.svg"}
+            alt={category?.name || "Category"}
             className="w-full h-32 sm:h-48 md:h-64 lg:h-80 xl:h-96 object-cover"
           />
           <div className="absolute inset-0 bg-black bg-opacity-40 flex items-end">
             <div className="p-4 sm:p-6 lg:p-8 xl:p-12 text-white w-full">
               <h1 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl xl:text-6xl font-bold mb-2">
-                {category.name}
+                {category?.name || "Category"}
               </h1>
               <p className="text-sm sm:text-base md:text-lg lg:text-xl xl:text-2xl opacity-90 mb-2">
-                {category.description}
+                {category?.description || "Explore our wellness products"}
               </p>
               <p className="text-sm sm:text-base md:text-lg lg:text-xl opacity-80">
-                {category.totalProducts} products available
+                {category?.product_count || products.length} products available
               </p>
             </div>
           </div>
@@ -249,7 +250,7 @@ export function CategoryDetailPage({ categorySlug }: CategoryDetailPageProps) {
             <span className="text-sm text-gray-600 hidden md:inline">Sort by:</span>
             <select
               value={sortBy}
-              onChange={(e) => setSortBy(e.target.value)}
+              onChange={(e) => handleSortChange(e.target.value)}
               className="border rounded-lg px-3 py-2 text-sm sm:text-base focus:outline-none focus:ring-2 focus:ring-green-500"
             >
               {sortOptions.map((option) => (
@@ -263,12 +264,6 @@ export function CategoryDetailPage({ categorySlug }: CategoryDetailPageProps) {
 
         {/* Active Filters */}
         <div className="flex flex-wrap gap-2">
-          {selectedFilters.brand && (
-            <span className="bg-green-100 text-green-800 px-3 py-1 rounded-full text-sm flex items-center gap-2">
-              Brand: {selectedFilters.brand}
-              <button onClick={() => handleFilterChange("brand", "")}>×</button>
-            </span>
-          )}
           {selectedFilters.rating > 0 && (
             <span className="bg-green-100 text-green-800 px-3 py-1 rounded-full text-sm flex items-center gap-2">
               {selectedFilters.rating}+ Stars
@@ -281,6 +276,12 @@ export function CategoryDetailPage({ categorySlug }: CategoryDetailPageProps) {
               <button onClick={() => handleFilterChange("availability", "all")}>×</button>
             </span>
           )}
+          {(selectedFilters.priceRange[0] > 0 || selectedFilters.priceRange[1] < 5000) && (
+            <span className="bg-green-100 text-green-800 px-3 py-1 rounded-full text-sm flex items-center gap-2">
+              Price: ₹{selectedFilters.priceRange[0]} - ₹{selectedFilters.priceRange[1]}
+              <button onClick={() => handleFilterChange("priceRange", [0, 5000])}>×</button>
+            </span>
+          )}
         </div>
       </div>
 
@@ -288,22 +289,37 @@ export function CategoryDetailPage({ categorySlug }: CategoryDetailPageProps) {
       <div className="p-4 sm:p-6 lg:p-8 xl:p-12">
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-lg sm:text-xl md:text-2xl lg:text-3xl font-semibold">
-            Showing {products.length} of {category.totalProducts} products
+            Showing {filteredProducts.length} of {category?.product_count || filteredProducts.length} products
           </h2>
         </div>
 
-        {viewMode === "grid" ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 3xl:grid-cols-8 gap-4 sm:gap-6 lg:gap-8">
-            {products.map((product) => (
-              <ProductCard key={product.id} {...product} />
+        {filteredProducts.length === 0 ? (
+          <div className="text-center py-12">
+            <p className="text-gray-500">No products found in this category</p>
+          </div>
+        ) : viewMode === "grid" ? (
+          <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-4 sm:gap-6 md:gap-8 lg:gap-6 xl:gap-8">
+            {filteredProducts.map((product) => (
+              <div key={product.id} className="flex-shrink-0">
+                <ProductCard 
+                  id={product.id.toString()}
+                  productId={product.id}
+                  slug={product.slug}
+                  name={product.name}
+                  price={parseFloat(product.price)}
+                  originalPrice={parseFloat(product.original_price)}
+                  discount={product.discount_percentage > 0 ? product.discount_percentage : undefined}
+                  image={product.primary_image || product.images?.[0]?.image || "/placeholder.svg"}
+                />
+              </div>
             ))}
           </div>
         ) : (
           <div className="space-y-4">
-            {products.map((product) => (
+            {filteredProducts.map((product) => (
               <div key={product.id} className="bg-white rounded-lg p-4 sm:p-6 shadow-sm border flex gap-4">
                 <img
-                  src={product.image || "/placeholder.svg"}
+                  src={product.primary_image || product.images?.[0]?.image || "/placeholder.svg"}
                   alt={product.name}
                   className="w-24 h-24 sm:w-32 sm:h-32 lg:w-40 lg:h-40 object-contain rounded-lg"
                 />
@@ -312,34 +328,34 @@ export function CategoryDetailPage({ categorySlug }: CategoryDetailPageProps) {
                   <div className="flex items-center gap-2 mb-2">
                     <div className="flex items-center">
                       <span className="text-yellow-400">★</span>
-                      <span className="text-sm ml-1">{product.rating}</span>
+                      <span className="text-sm ml-1">{product.average_rating?.toFixed(1) || 0}</span>
                     </div>
-                    <span className="text-sm text-gray-500">({product.reviews} reviews)</span>
+                    <span className="text-sm text-gray-500">({product.review_count || 0} reviews)</span>
                   </div>
                   <div className="flex items-center gap-2 mb-2">
                     <span className="text-lg sm:text-xl lg:text-2xl font-semibold text-green-600">
-                      ₹{product.price}
+                      ₹{parseFloat(product.price).toFixed(2)}
                     </span>
-                    {product.originalPrice > product.price && (
+                    {parseFloat(product.original_price) > parseFloat(product.price) && (
                       <>
                         <span className="text-sm sm:text-base text-gray-500 line-through">
-                          ₹{product.originalPrice}
+                          ₹{parseFloat(product.original_price).toFixed(2)}
                         </span>
                         <span className="text-sm bg-green-100 text-green-800 px-2 py-1 rounded">
-                          {product.discount}% OFF
+                          {product.discount_percentage}% OFF
                         </span>
                       </>
                     )}
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className={`text-sm ${product.inStock ? "text-green-600" : "text-red-600"}`}>
-                      {product.inStock ? "In Stock" : "Out of Stock"}
+                    <span className={`text-sm ${product.stock_quantity > 0 ? "text-green-600" : "text-red-600"}`}>
+                      {product.stock_quantity > 0 ? "In Stock" : "Out of Stock"}
                     </span>
                     <button
-                      disabled={!product.inStock}
+                      disabled={product.stock_quantity === 0}
                       className="bg-green-600 text-white px-4 py-2 rounded text-sm hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
                     >
-                      {product.inStock ? "Add to Cart" : "Notify Me"}
+                      {product.stock_quantity > 0 ? "Add to Cart" : "Notify Me"}
                     </button>
                   </div>
                 </div>
@@ -350,11 +366,25 @@ export function CategoryDetailPage({ categorySlug }: CategoryDetailPageProps) {
       </div>
 
       {/* Load More Button */}
-      <div className="p-4 sm:p-6 lg:p-8 xl:p-12 text-center">
-        <button className="bg-green-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-green-700 transition-colors">
-          Load More Products
-        </button>
-      </div>
+      {hasMore && (
+        <div className="p-4 sm:p-6 lg:p-8 xl:p-12 text-center">
+          <button 
+            onClick={handleLoadMore}
+            disabled={isLoading}
+            className="bg-green-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+          >
+            {isLoading ? "Loading..." : "Load More Products"}
+          </button>
+        </div>
+      )}
+
+      {/* Show loading indicator while fetching */}
+      {isLoading && filteredProducts.length > 0 && (
+        <div className="p-4 text-center">
+          <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-green-600"></div>
+          <p className="mt-2 text-gray-600">Loading more products...</p>
+        </div>
+      )}
 
       {/* Filter Modal */}
       {showFilters && (
@@ -376,36 +406,36 @@ export function CategoryDetailPage({ categorySlug }: CategoryDetailPageProps) {
                     <span>₹{selectedFilters.priceRange[0]}</span>
                     <span>₹{selectedFilters.priceRange[1]}</span>
                   </div>
-                  <input
-                    type="range"
-                    min="0"
-                    max="5000"
-                    value={selectedFilters.priceRange[1]}
-                    onChange={(e) =>
-                      handleFilterChange("priceRange", [selectedFilters.priceRange[0], Number(e.target.value)])
-                    }
-                    className="w-full"
-                  />
-                </div>
-              </div>
-
-              {/* Brand */}
-              <div>
-                <h4 className="font-medium mb-3">Brand</h4>
-                <div className="space-y-2">
-                  {brands.map((brand) => (
-                    <label key={brand} className="flex items-center gap-2">
+                  <div className="space-y-3">
+                    <div>
+                      <label className="text-xs text-gray-600">Min Price</label>
                       <input
-                        type="radio"
-                        name="brand"
-                        value={brand}
-                        checked={selectedFilters.brand === brand}
-                        onChange={(e) => handleFilterChange("brand", e.target.value)}
-                        className="text-green-600"
+                        type="range"
+                        min="0"
+                        max="4999"
+                        step="50"
+                        value={selectedFilters.priceRange[0]}
+                        onChange={(e) =>
+                          handleFilterChange("priceRange", [Number(e.target.value), selectedFilters.priceRange[1]])
+                        }
+                        className="w-full"
                       />
-                      <span className="text-sm">{brand}</span>
-                    </label>
-                  ))}
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-600">Max Price</label>
+                      <input
+                        type="range"
+                        min="1"
+                        max="5000"
+                        step="50"
+                        value={selectedFilters.priceRange[1]}
+                        onChange={(e) =>
+                          handleFilterChange("priceRange", [selectedFilters.priceRange[0], Number(e.target.value)])
+                        }
+                        className="w-full"
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -468,7 +498,10 @@ export function CategoryDetailPage({ categorySlug }: CategoryDetailPageProps) {
                 Clear All
               </button>
               <button
-                onClick={() => setShowFilters(false)}
+                onClick={() => {
+                  setShowFilters(false)
+                  // Filters will be applied automatically through useEffect
+                }}
                 className="flex-1 py-3 bg-green-600 text-white rounded-lg font-medium"
               >
                 Apply Filters

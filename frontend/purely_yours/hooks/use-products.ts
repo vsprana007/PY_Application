@@ -116,6 +116,7 @@ export function useProducts() {
   const [error, setError] = useState<string | null>(null)
   const [hasMore, setHasMore] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
+  const [categoriesLoading, setCategoriesLoading] = useState(true)
   const { toast } = useToast()
 
   const normalizeProduct = (product: any): Product => {
@@ -168,7 +169,7 @@ export function useProducts() {
       average_rating: safeNumber(safeGet(product, "average_rating"), 0),
       review_count: safeNumber(safeGet(product, "review_count"), 0),
       created_at: safeString(safeGet(product, "created_at")),
-      primary_image: safeString(safeGet(product, "primary_image")),
+      primary_image: safeGet(product, "primary_image") || null,
     }
   }
 
@@ -178,9 +179,9 @@ export function useProducts() {
       name: safeString(safeGet(category, "name")),
       slug: safeString(safeGet(category, "slug")),
       description: safeString(safeGet(category, "description")),
-      image: safeString(safeGet(category, "image")),
+      image: safeGet(category, "image") || null,
       product_count: safeNumber(safeGet(category, "product_count"), 0),
-      parent: safeNumber(safeGet(category, "parent")),
+      parent: safeGet(category, "parent") || null,
       children: safeArray(safeGet(category, "children"), []).map(normalizeCategory),
     }
   }
@@ -222,11 +223,15 @@ export function useProducts() {
 
   const fetchCategories = useCallback(async () => {
     try {
-      const response = await apiClient.getCategories()
+      setCategoriesLoading(true)
+      const response = await apiClient.getCollections()
       const normalizedCategories = safeArray(response, []).map(normalizeCategory)
       setCategories(normalizedCategories)
     } catch (err: any) {
       console.error("Error fetching categories:", err)
+      setError(getErrorMessage(err) || "Failed to fetch categories")
+    } finally {
+      setCategoriesLoading(false)
     }
   }, [])
 
@@ -238,7 +243,7 @@ export function useProducts() {
         setIsLoading(true)
         setError(null)
 
-        const response = await apiClient.getCategoryProducts(categorySlug, filters)
+        const response = await apiClient.getCollectionProducts(categorySlug, filters)
 
         if (response) {
           const normalizedProducts = safeArray(response.results, []).map(normalizeProduct)
@@ -247,13 +252,16 @@ export function useProducts() {
           setCurrentPage(1)
         }
       } catch (err: any) {
-        const errorMessage = getErrorMessage(err) || ERROR_MESSAGES.NETWORK_ERROR
-        setError(errorMessage)
-        toast({
-          title: "Error",
-          description: errorMessage,
-          variant: "destructive",
-        })
+        console.error("Failed to fetch category products:", err)
+        
+        // Don't show error toast for category-specific failures, just clear products
+        setProducts([])
+        setError(null) // Clear error to prevent error screen
+        setHasMore(false)
+        setCurrentPage(1)
+        
+        // Only log the error, don't show toast for better UX
+        console.warn(`No products found for category: ${categorySlug}`)
       } finally {
         setIsLoading(false)
       }
@@ -325,6 +333,15 @@ export function useProducts() {
       return []
     }
   }, [])
+  const getValueCombos = useCallback(async () => {
+    try {
+      const response = await apiClient.getValueCombos()
+      return safeArray(response, []).map(normalizeProduct)
+    } catch (err: any) {
+      console.error("Error fetching value combos:", err)
+      return []
+    }
+  }, [])
 
   const getProduct = useCallback(async (slug: string) => {
     if (!slug) return null
@@ -338,6 +355,17 @@ export function useProducts() {
     }
   }, [])
 
+  const clearProducts = useCallback(() => {
+    setProducts([])
+    setError(null)
+    setHasMore(false)
+    setCurrentPage(1)
+  }, [])
+
+  const refetchCategories = useCallback(() => {
+    fetchCategories()
+  }, [fetchCategories])
+
   useEffect(() => {
     fetchCategories()
   }, [fetchCategories])
@@ -346,17 +374,21 @@ export function useProducts() {
     products,
     categories,
     isLoading,
+    categoriesLoading,
     error,
     hasMore,
     currentPage,
     fetchProducts,
     fetchCategories,
+    refetchCategories,
     fetchCategoryProducts,
     searchProducts,
     loadMore,
     getFeaturedProducts,
     getBestsellers,
+    getValueCombos,
     getProduct,
+    clearProducts,
   }
 }
 
@@ -364,6 +396,7 @@ export function useProduct(slug: string) {
   const [product, setProduct] = useState<Product | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [retryCount, setRetryCount] = useState(0)
   const { toast } = useToast()
 
   const normalizeProduct = (data: any): Product => ({
@@ -376,7 +409,7 @@ export function useProduct(slug: string) {
       name: safeString(safeGet(data, "category.name")),
       slug: safeString(safeGet(data, "category.slug")),
       description: safeString(safeGet(data, "category.description")),
-      image: safeString(safeGet(data, "category.image")),
+      image: safeGet(data, "category.image") || null,
       product_count: safeNumber(safeGet(data, "category.product_count"), 0),
     },
     sku: safeString(safeGet(data, "sku")),
@@ -419,10 +452,13 @@ export function useProduct(slug: string) {
       answer: safeString(safeGet(faq, "answer")),
       order: safeNumber(safeGet(faq, "order"), 0),
     })),
+    average_rating: safeNumber(safeGet(data, "average_rating"), 0),
+    review_count: safeNumber(safeGet(data, "review_count"), 0),
     created_at: safeString(safeGet(data, "created_at")),
+    primary_image: safeGet(data, "primary_image") || null,
   })
 
-  const fetchProduct = useCallback(async () => {
+  const fetchProduct = useCallback(async (shouldRetry = false) => {
     if (!slug) return
 
     try {
@@ -432,6 +468,7 @@ export function useProduct(slug: string) {
 
       if (response) {
         setProduct(normalizeProduct(response))
+        setRetryCount(0)
       } else {
         setProduct(null)
         setError("Product not found")
@@ -440,15 +477,25 @@ export function useProduct(slug: string) {
       const errorMessage = getErrorMessage(err) || ERROR_MESSAGES.NOT_FOUND
       setError(errorMessage)
       setProduct(null)
-      toast({
-        title: "Error",
-        description: errorMessage,
-        variant: "destructive",
-      })
+      
+      if (shouldRetry && retryCount < 3) {
+        setRetryCount(prev => prev + 1)
+        setTimeout(() => fetchProduct(true), 1000 * (retryCount + 1))
+      } else {
+        toast({
+          title: "Error",
+          description: errorMessage,
+          variant: "destructive",
+        })
+      }
     } finally {
       setIsLoading(false)
     }
-  }, [slug, toast])
+  }, [slug, toast, retryCount])
+
+  const retry = useCallback(() => {
+    fetchProduct(true)
+  }, [fetchProduct])
 
   useEffect(() => {
     fetchProduct()
@@ -458,6 +505,8 @@ export function useProduct(slug: string) {
     product,
     isLoading,
     error,
+    retryCount,
     refetch: fetchProduct,
+    retry,
   }
 }

@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Review, ReviewHelpful
+from .models import Review, ReviewHelpful, ExternalReview
 from accounts.serializers import UserProfileSerializer
 
 class ReviewSerializer(serializers.ModelSerializer):
@@ -26,3 +26,9 @@ class CreateReviewSerializer(serializers.ModelSerializer):
         validated_data['user'] = self.context['request'].user
         validated_data['product_id'] = self.context['product_id']
         return super().create(validated_data)
+
+class ExternalReviewSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ExternalReview
+        fields = ['review_id', 'verified_buyer', 'product_title', 'rating', 
+                 'author', 'timestamp', 'title', 'body', 'source']

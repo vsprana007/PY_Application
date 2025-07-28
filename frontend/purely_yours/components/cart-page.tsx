@@ -3,31 +3,101 @@
 import { Minus, Plus, Trash2, ShoppingBag, ArrowLeft } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
+import { useState } from "react"
 import { useCart } from "@/hooks/use-cart"
 import { useAuth } from "@/hooks/use-auth"
 import { formatCurrency } from "@/lib/utils"
+import { MessageModal } from "@/components/ui/message-modal"
 
 export function CartPage() {
   const router = useRouter()
   const { cart, updateCartItem, removeFromCart, isLoading, clearCart } = useCart()
   const { isAuthenticated } = useAuth()
+  
+  // Modal state
+  const [modal, setModal] = useState({
+    isOpen: false,
+    type: 'info' as 'success' | 'error' | 'info' | 'warning' | 'confirm',
+    title: '',
+    message: '',
+    onConfirm: undefined as (() => void) | undefined,
+    showCancel: false,
+    confirmText: 'OK',
+    cancelText: 'Cancel'
+  })
+
+  const showModal = (
+    type: 'success' | 'error' | 'info' | 'warning' | 'confirm',
+    title: string,
+    message: string,
+    onConfirm?: () => void,
+    confirmText = 'OK',
+    cancelText = 'Cancel'
+  ) => {
+    setModal({
+      isOpen: true,
+      type,
+      title,
+      message,
+      onConfirm,
+      showCancel: type === 'confirm',
+      confirmText,
+      cancelText
+    })
+  }
+
+  const closeModal = () => {
+    setModal(prev => ({ ...prev, isOpen: false }))
+  }
 
   const updateQuantity = async (itemId: number, newQuantity: number) => {
-    if (newQuantity === 0) {
-      await removeFromCart(itemId)
-    } else {
-      await updateCartItem(itemId, newQuantity)
+    try {
+      if (newQuantity === 0) {
+        await removeFromCart(itemId)
+        showModal('success', 'Item Removed', 'Item has been removed from your cart successfully.')
+      } else {
+        await updateCartItem(itemId, newQuantity)
+        showModal('success', 'Cart Updated', 'Item quantity has been updated successfully.')
+      }
+    } catch (error) {
+      showModal('error', 'Update Failed', 'Failed to update item quantity. Please try again.')
     }
   }
 
   const removeItem = async (itemId: number) => {
-    await removeFromCart(itemId)
+    showModal(
+      'confirm',
+      'Remove Item',
+      'Are you sure you want to remove this item from your cart?',
+      async () => {
+        try {
+          await removeFromCart(itemId)
+          showModal('success', 'Item Removed', 'Item has been removed from your cart successfully.')
+        } catch (error) {
+          showModal('error', 'Remove Failed', 'Failed to remove item from cart. Please try again.')
+        }
+      },
+      'Remove',
+      'Cancel'
+    )
   }
 
   const handleClearCart = async () => {
-    if (window.confirm("Are you sure you want to clear your cart?")) {
-      await clearCart()
-    }
+    showModal(
+      'confirm',
+      'Clear Cart',
+      'Are you sure you want to clear your entire cart? This action cannot be undone.',
+      async () => {
+        try {
+          await clearCart()
+          showModal('success', 'Cart Cleared', 'Your cart has been cleared successfully.')
+        } catch (error) {
+          showModal('error', 'Clear Failed', 'Failed to clear cart. Please try again.')
+        }
+      },
+      'Clear Cart',
+      'Cancel'
+    )
   }
 
   if (!isAuthenticated) {
@@ -35,9 +105,9 @@ export function CartPage() {
       <div className="min-h-screen bg-gray-50">
         {/* Header */}
         <div className="bg-white shadow-sm p-4 flex items-center">
-          <Link href="/" className="mr-4">
+          <button onClick={() => router.back()} className="mr-4">
             <ArrowLeft size={24} />
-          </Link>
+          </button>
           <h1 className="text-lg font-semibold">Shopping Cart</h1>
         </div>
 
@@ -60,9 +130,9 @@ export function CartPage() {
       <div className="min-h-screen bg-gray-50">
         {/* Header */}
         <div className="bg-white shadow-sm p-4 flex items-center">
-          <Link href="/" className="mr-4">
+          <button onClick={() => router.back()} className="mr-4">
             <ArrowLeft size={24} />
-          </Link>
+          </button>
           <h1 className="text-lg font-semibold">Shopping Cart</h1>
         </div>
 
@@ -78,9 +148,9 @@ export function CartPage() {
       <div className="min-h-screen bg-gray-50">
         {/* Header */}
         <div className="bg-white shadow-sm p-4 flex items-center">
-          <Link href="/" className="mr-4">
+          <button onClick={() => router.back()} className="mr-4">
             <ArrowLeft size={24} />
-          </Link>
+          </button>
           <h1 className="text-lg font-semibold">Shopping Cart</h1>
         </div>
 
@@ -106,9 +176,9 @@ export function CartPage() {
       {/* Header */}
       <div className="bg-white shadow-sm p-4 flex items-center justify-between">
         <div className="flex items-center">
-          <Link href="/" className="mr-4">
+          <button onClick={() => router.back()} className="mr-4">
             <ArrowLeft size={24} />
-          </Link>
+          </button>
           <h1 className="text-lg font-semibold">Cart ({cart.total_items})</h1>
         </div>
         {cart.items.length > 0 && (
@@ -220,6 +290,19 @@ export function CartPage() {
           </div>
         </div>
       </div>
+
+      {/* Message Modal */}
+      <MessageModal
+        isOpen={modal.isOpen}
+        onClose={closeModal}
+        onConfirm={modal.onConfirm}
+        type={modal.type}
+        title={modal.title}
+        message={modal.message}
+        confirmText={modal.confirmText}
+        cancelText={modal.cancelText}
+        showCancel={modal.showCancel}
+      />
     </div>
   )
 }

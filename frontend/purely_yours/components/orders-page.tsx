@@ -5,14 +5,51 @@ import { Package, ArrowLeft, Eye, RotateCcw, X } from "lucide-react"
 import Link from "next/link"
 import { useOrders } from "@/hooks/use-orders"
 import { useAuth } from "@/hooks/use-auth"
-import { formatCurrency, formatDate, showToast } from "@/lib/utils"
+import { formatCurrency, formatDate } from "@/lib/utils"
 import { ORDER_STATUS_COLORS, ORDER_STATUS_LABELS } from "@/lib/constants"
+import { MessageModal } from "@/components/ui/message-modal"
 
 export function OrdersPage() {
   const { orders, fetchOrders, cancelOrder, isLoading } = useOrders()
   const { isAuthenticated } = useAuth()
   const [selectedOrder, setSelectedOrder] = useState<any>(null)
   const [showOrderDetails, setShowOrderDetails] = useState(false)
+  
+  // Modal state
+  const [modal, setModal] = useState({
+    isOpen: false,
+    type: 'info' as 'success' | 'error' | 'info' | 'warning' | 'confirm',
+    title: '',
+    message: '',
+    onConfirm: undefined as (() => void) | undefined,
+    showCancel: false,
+    confirmText: 'OK',
+    cancelText: 'Cancel'
+  })
+
+  const showModal = (
+    type: 'success' | 'error' | 'info' | 'warning' | 'confirm',
+    title: string,
+    message: string,
+    onConfirm?: () => void,
+    confirmText = 'OK',
+    cancelText = 'Cancel'
+  ) => {
+    setModal({
+      isOpen: true,
+      type,
+      title,
+      message,
+      onConfirm,
+      showCancel: type === 'confirm',
+      confirmText,
+      cancelText
+    })
+  }
+
+  const closeModal = () => {
+    setModal(prev => ({ ...prev, isOpen: false }))
+  }
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -21,15 +58,22 @@ export function OrdersPage() {
   }, [isAuthenticated])
 
   const handleCancelOrder = async (orderId: number) => {
-    if (window.confirm("Are you sure you want to cancel this order?")) {
-      try {
-        await cancelOrder(orderId)
-        showToast("Order cancelled successfully", "success")
-      } catch (error) {
-        console.error("Failed to cancel order:", error)
-        showToast("Failed to cancel order", "error")
-      }
-    }
+    showModal(
+      'confirm',
+      'Cancel Order',
+      'Are you sure you want to cancel this order? This action cannot be undone.',
+      async () => {
+        try {
+          await cancelOrder(orderId)
+          showModal('success', 'Order Cancelled', 'Your order has been cancelled successfully.')
+        } catch (error) {
+          console.error("Failed to cancel order:", error)
+          showModal('error', 'Cancellation Failed', 'Failed to cancel order. Please try again or contact support.')
+        }
+      },
+      'Cancel Order',
+      'Keep Order'
+    )
   }
 
   const handleViewOrder = (order: any) => {
@@ -78,8 +122,10 @@ export function OrdersPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      
       {/* Header */}
-      <div className="bg-white shadow-sm p-4 flex items-center">
+      {/* <div className="bg-white shadow-sm p-4 flex items-center"> */}
+      <div className="bg-white shadow-sm p-4 flex items-center sticky top-0 z-10"> 
         <Link href="/account" className="mr-4">
           <ArrowLeft size={24} />
         </Link>
@@ -268,6 +314,19 @@ export function OrdersPage() {
           </div>
         </div>
       )}
+
+      {/* Message Modal */}
+      <MessageModal
+        isOpen={modal.isOpen}
+        onClose={closeModal}
+        onConfirm={modal.onConfirm}
+        type={modal.type}
+        title={modal.title}
+        message={modal.message}
+        confirmText={modal.confirmText}
+        cancelText={modal.cancelText}
+        showCancel={modal.showCancel}
+      />
     </div>
   )
 }

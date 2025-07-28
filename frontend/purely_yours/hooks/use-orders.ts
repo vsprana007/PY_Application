@@ -242,7 +242,7 @@ export function useOrder(orderId: number) {
     try {
       setIsLoading(true)
       setError(null)
-      const response = await apiClient.getOrder(orderId)
+      const response = await apiClient.getOrder(orderId.toString())
       setOrder(response)
     } catch (err: any) {
       const errorMessage = err.message || ERROR_MESSAGES.NOT_FOUND

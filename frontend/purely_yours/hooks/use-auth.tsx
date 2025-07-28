@@ -9,12 +9,15 @@ import { safeGet, safeString, getErrorMessage } from "@/lib/utils"
 interface User {
   id: number
   email: string
+  username?: string
   first_name: string
   last_name: string
   mobile?: string
   is_mobile_verified: boolean
   date_joined: string
   profile_image?: string
+  date_of_birth?: string
+  gender?: string
 }
 
 interface AuthContextType {
@@ -61,12 +64,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           const userData = {
             id: Number(safeGet(response, "id", 0)) || 0,
             email: safeString(safeGet(response, "email")),
+            username: safeString(safeGet(response, "username")),
             first_name: safeString(safeGet(response, "first_name")),
             last_name: safeString(safeGet(response, "last_name")),
             mobile: safeString(safeGet(response, "mobile")),
             is_mobile_verified: !!safeGet(response, "is_mobile_verified"),
             date_joined: safeString(safeGet(response, "date_joined")),
             profile_image: safeString(safeGet(response, "profile_image")),
+            date_of_birth: safeString(safeGet(response, "date_of_birth")),
+            gender: safeString(safeGet(response, "gender")),
           }
           setUser(userData)
           if (typeof window !== "undefined") {
@@ -296,12 +302,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           const userData = {
             id: Number(safeGet(response, "id", 0)) || 0,
             email: safeString(safeGet(updatedUser, "email")),
+            username: safeString(safeGet(updatedUser, "username")),
             first_name: safeString(safeGet(updatedUser, "first_name")),
             last_name: safeString(safeGet(updatedUser, "last_name")),
             mobile: safeString(safeGet(updatedUser, "mobile")),
             is_mobile_verified: !!safeGet(updatedUser, "is_mobile_verified"),
             date_joined: safeString(safeGet(updatedUser, "date_joined")),
             profile_image: safeString(safeGet(updatedUser, "profile_image")),
+            date_of_birth: safeString(safeGet(updatedUser, "date_of_birth")),
+            gender: safeString(safeGet(updatedUser, "gender")),
           }
           setUser(userData)
           if (typeof window !== "undefined") {

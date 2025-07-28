@@ -1,4 +1,38 @@
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://192.168.229.169:8000/api"
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"
+
+// Type definitions for API responses
+export interface Review {
+  review_id: string
+  verified_buyer: boolean
+  product_title: string
+  rating: number
+  author: string
+  timestamp: string
+  title: string
+  body: string
+  source: string
+}
+
+export interface ReviewSummary {
+  average_rating: number
+  total_reviews: number
+  rating_distribution: {
+    1: number
+    2: number
+    3: number
+    4: number
+    5: number
+  }
+  verified_buyers: number
+  verified_buyer_percentage: number
+}
+
+export interface PaginatedResponse<T> {
+  results: T[]
+  count: number
+  next: string | null
+  previous: string | null
+}
 
 // API client with authentication and error handling
 class ApiClient {
@@ -45,7 +79,7 @@ class ApiClient {
     }
 
     if (this.token) {
-      headers["authorization"] = `Bearer ${this.token}`
+      headers["Authorization"] = `Bearer ${this.token}`
     }
 
     const config: RequestInit = {
@@ -81,6 +115,7 @@ class ApiClient {
         }
 
         const errorMessage = data?.message || data?.error || data || `HTTP error! status: ${response.status}`
+        console.error("API error:", errorMessage)
         throw new Error(errorMessage)
       }
 
@@ -190,23 +225,23 @@ class ApiClient {
 
   async createAddress(data: {
     type: string
-    full_name: string
+    name: string
     mobile: string
     address_line_1: string
     address_line_2?: string
     city: string
     state: string
-    postal_code: string
+    pincode: string
     country: string
     is_default?: boolean
   }) {
     if (
-      !data?.full_name ||
+      !data?.name ||
       !data?.mobile ||
       !data?.address_line_1 ||
       !data?.city ||
       !data?.state ||
-      !data?.postal_code
+      !data?.pincode
     ) {
       throw new Error("Required address fields are missing")
     }
@@ -238,19 +273,36 @@ class ApiClient {
     })
   }
 
-  // Product endpoints
-  async getCategories() {
+  // Product endpoints - Updated to match Django URLs
+  async getCollections() {
     try {
-      const response = await this.request("/products/categories/")
+      const response = await this.request("/products/collections/")
       return Array.isArray(response) ? response : response?.results || []
     } catch (error) {
-      console.error("Failed to fetch categories:", error)
-      return []
+      console.error("Failed to fetch collections from /products/collections/:", error)
+      
+      // Try alternative endpoints
+      try {
+        const fallbackResponse = await this.request("/collections/")
+        return Array.isArray(fallbackResponse) ? fallbackResponse : fallbackResponse?.results || []
+      } catch (fallbackError) {
+        console.error("Failed to fetch collections from fallback endpoint:", fallbackError)
+        
+        // Try categories endpoint as last resort
+        try {
+          const categoryResponse = await this.request("/categories/")
+          return Array.isArray(categoryResponse) ? categoryResponse : categoryResponse?.results || []
+        } catch (categoryError) {
+          console.error("Failed to fetch categories:", categoryError)
+          return []
+        }
+      }
     }
   }
 
   async getProducts(params?: {
-    category?: string
+    collection?: string
+    tag?: string
     search?: string
     ordering?: string
     page?: number
@@ -290,7 +342,9 @@ class ApiClient {
     }
 
     try {
-      const response = await this.request(`/products/${slug}/`)
+      // Properly encode the product slug for URL
+      const encodedSlug = encodeURIComponent(slug)
+      const response = await this.request(`/products/${encodedSlug}/`)
       return response || null
     } catch (error) {
       console.error("Failed to fetch product:", error)
@@ -298,9 +352,113 @@ class ApiClient {
     }
   }
 
-  async getCategoryProducts(categorySlug: string, params?: any) {
-    if (!categorySlug) {
-      throw new Error("Category slug is required")
+  async getCollectionProducts(collectionSlug: string, params?: any) {
+    if (!collectionSlug) {
+      throw new Error("Collection slug is required")
+    }
+
+    try {
+      const searchParams = new URLSearchParams()
+      if (params) {
+        Object.entries(params).forEach(([key, value]) => {
+          if (value !== undefined && value !== null && value !== "") {
+            searchParams.append(key, value.toString())
+          }
+        })
+      }
+
+      // Try the collection-specific endpoint first
+      const queryString = searchParams.toString()
+      
+      try {
+        // Properly encode the collection slug for URL
+        const encodedSlug = encodeURIComponent(collectionSlug)
+        const response = await this.request(
+          `/products/collections/${encodedSlug}/${queryString ? `?${queryString}` : ""}`,
+        )
+        
+        return {
+          results: Array.isArray(response?.results) ? response.results : Array.isArray(response) ? response : [],
+          count: response?.count || 0,
+          next: response?.next || null,
+          previous: response?.previous || null,
+        }
+      } catch (collectionError: any) {
+        // If collection endpoint fails, try filtering all products by collection
+        console.warn(`Collection endpoint failed for ${collectionSlug}, trying fallback:`, collectionError.message)
+        
+        const fallbackParams = { ...params, collection: collectionSlug }
+        const fallbackSearchParams = new URLSearchParams()
+        Object.entries(fallbackParams).forEach(([key, value]) => {
+          if (value !== undefined && value !== null && value !== "") {
+            fallbackSearchParams.append(key, value.toString())
+          }
+        })
+        
+        const fallbackResponse = await this.request(`/products/?${fallbackSearchParams.toString()}`)
+        return {
+          results: Array.isArray(fallbackResponse?.results) ? fallbackResponse.results : Array.isArray(fallbackResponse) ? fallbackResponse : [],
+          count: fallbackResponse?.count || 0,
+          next: fallbackResponse?.next || null,
+          previous: fallbackResponse?.previous || null,
+        }
+      }
+    } catch (error) {
+      console.error("Failed to fetch collection products:", error)
+      return { results: [], count: 0, next: null, previous: null }
+    }
+  }
+
+  async getFeaturedProducts() {
+    try {
+      const response = await this.request("/products/tags/top-sellers/")
+      return Array.isArray(response) ? response : response?.results || []
+    } catch (error) {
+      console.error("Failed to fetch featured products:", error)
+      return []
+    }
+  }
+
+  async getBestsellers() {
+    try {
+      const response = await this.request("/products/collections/bestsellers/")
+      return Array.isArray(response) ? response : response?.results || []
+    } catch (error) {
+      console.error("Failed to fetch bestsellers:", error)
+      return []
+    }
+  }
+  async getValueCombos() {
+    try {
+      const response = await this.request("/products/collections/value-combos/")
+      return Array.isArray(response) ? response : response?.results || []
+    } catch (error) {
+      console.error("Failed to fetch value combos:", error)
+      return []
+    }
+  }
+
+  // Tag endpoints
+  async getTags() {
+    try {
+      const response = await this.request("/products/tags/")
+      return Array.isArray(response) ? response : response?.results || []
+    } catch (error) {
+      console.error("Failed to fetch tags:", error)
+      return []
+    }
+  }
+
+  async getTagProducts(tagSlug: string, params?: {
+    search?: string
+    ordering?: string
+    page?: number
+    min_price?: number
+    max_price?: number
+    in_stock?: boolean
+  }) {
+    if (!tagSlug) {
+      throw new Error("Tag slug is required")
     }
 
     try {
@@ -314,8 +472,9 @@ class ApiClient {
       }
 
       const queryString = searchParams.toString()
+      const encodedSlug = encodeURIComponent(tagSlug)
       const response = await this.request(
-        `/products/categories/${categorySlug}/${queryString ? `?${queryString}` : ""}`,
+        `/products/tags/${encodedSlug}/${queryString ? `?${queryString}` : ""}`,
       )
 
       return {
@@ -325,27 +484,59 @@ class ApiClient {
         previous: response?.previous || null,
       }
     } catch (error) {
-      console.error("Failed to fetch category products:", error)
+      console.error("Failed to fetch tag products:", error)
       return { results: [], count: 0, next: null, previous: null }
     }
   }
 
-  async getFeaturedProducts() {
+  // Helper method to get products by multiple tags
+  async getProductsByTags(tagSlugs: string[], params?: any) {
+    if (!tagSlugs || tagSlugs.length === 0) {
+      return { results: [], count: 0, next: null, previous: null }
+    }
+
     try {
-      const response = await this.request("/products/featured/")
-      return Array.isArray(response) ? response : response?.results || []
+      const searchParams = new URLSearchParams()
+      
+      // Add each tag as a separate parameter
+      tagSlugs.forEach(tag => {
+        if (tag) {
+          searchParams.append('tag', tag)
+        }
+      })
+
+      if (params) {
+        Object.entries(params).forEach(([key, value]) => {
+          if (value !== undefined && value !== null && value !== "") {
+            searchParams.append(key, value.toString())
+          }
+        })
+      }
+
+      const response = await this.request(`/products/?${searchParams.toString()}`)
+      return {
+        results: Array.isArray(response?.results) ? response.results : Array.isArray(response) ? response : [],
+        count: response?.count || 0,
+        next: response?.next || null,
+        previous: response?.previous || null,
+      }
     } catch (error) {
-      console.error("Failed to fetch featured products:", error)
-      return []
+      console.error("Failed to fetch products by tags:", error)
+      return { results: [], count: 0, next: null, previous: null }
     }
   }
 
-  async getBestsellers() {
+  // Get tag suggestions based on query
+  async getTagSuggestions(query: string) {
+    if (!query?.trim()) {
+      return []
+    }
+
     try {
-      const response = await this.request("/products/bestsellers/")
-      return Array.isArray(response) ? response : response?.results || []
+      const response = await this.request(`/products/tags/?search=${encodeURIComponent(query.trim())}`)
+      return Array.isArray(response?.results) ? response.results : Array.isArray(response) ? response : []
     } catch (error) {
-      console.error("Failed to fetch bestsellers:", error)
+      console.error("Failed to fetch tag suggestions:", error)
       return []
     }
   }
@@ -353,10 +544,12 @@ class ApiClient {
   async searchProducts(
     query: string,
     params?: {
-      category?: string
+      collection?: string
+      tag?: string
       min_price?: number
       max_price?: number
       ordering?: string
+      page?: number
     },
   ) {
     if (!query?.trim()) {
@@ -473,10 +666,24 @@ class ApiClient {
       throw new Error("Product ID is required")
     }
 
-    return this.request("/wishlist/add/", {
+    const response = await this.request("/wishlist/add/", {
       method: "POST",
       body: JSON.stringify({ product_id: productId }),
     })
+    
+    // Ensure we return a consistent response format
+    if (response && !response.wishlist) {
+      // If the response doesn't include updated wishlist, fetch it
+      const updatedWishlist = await this.getWishlist()
+      return {
+        success: true,
+        message: "Item added to wishlist successfully",
+        wishlist: updatedWishlist,
+        ...response
+      }
+    }
+
+    return response
   }
 
   async removeFromWishlist(itemId: number) {
@@ -484,9 +691,23 @@ class ApiClient {
       throw new Error("Item ID is required")
     }
 
-    return this.request(`/wishlist/items/${itemId}/`, {
+    const response = await this.request(`/wishlist/remove/${itemId}/`, {
       method: "DELETE",
     })
+    
+    // Ensure we return a consistent response format
+    if (response && !response.wishlist) {
+      // If the response doesn't include updated wishlist, fetch it
+      const updatedWishlist = await this.getWishlist()
+      return {
+        success: true,
+        message: "Item removed from wishlist successfully",
+        wishlist: updatedWishlist,
+        ...response
+      }
+    }
+
+    return response
   }
 
   async toggleWishlist(productId: number) {
@@ -494,10 +715,60 @@ class ApiClient {
       throw new Error("Product ID is required")
     }
 
-    return this.request("/wishlist/toggle/", {
-      method: "POST",
-      body: JSON.stringify({ product_id: productId }),
+    // Since /wishlist/toggle/ endpoint doesn't exist, we'll implement toggle logic
+    // by checking current wishlist and then adding/removing accordingly
+    try {
+      // First get current wishlist to check if product exists
+      const wishlist = await this.getWishlist()
+      const existingItem = wishlist.items.find((item: any) => 
+        Number(item.product.id) === Number(productId)
+      )
+
+      let response
+      if (existingItem) {
+        // Product exists, remove it
+        response = await this.removeFromWishlist(existingItem.id)
+        // Add the toggle-specific response format
+        response = {
+          ...response,
+          added: false,
+          message: "Product removed from wishlist"
+        }
+      } else {
+        // Product doesn't exist, add it
+        response = await this.addToWishlist(productId)
+        // Add the toggle-specific response format
+        response = {
+          ...response,
+          added: true,
+          message: "Product added to wishlist"
+        }
+      }
+
+      return response
+    } catch (error) {
+      throw error
+    }
+  }
+
+  async clearWishlist(){
+    const response = await this.request(`/wishlist/clear/`, {
+      method: "DELETE",
     })
+    
+    // Ensure we return a consistent response format
+    if (response && !response.wishlist) {
+      // If the response doesn't include updated wishlist, fetch it
+      const updatedWishlist = await this.getWishlist()
+      return {
+        success: true,
+        message: "Items clear from wishlist successfully",
+        wishlist: updatedWishlist,
+        ...response
+      }
+    }
+    return response
+
   }
 
   // Order endpoints
@@ -738,14 +1009,31 @@ class ApiClient {
     })
   }
 
-  // Review endpoints
-  async getProductReviews(productId: number) {
+  // Review endpoints - Updated to match products URLs
+  async getProductReviews(productId: number, params?: {
+    page?: number
+    page_size?: number
+    ordering?: string
+  }) {
     if (!productId) {
       return { results: [], count: 0, next: null, previous: null }
     }
 
     try {
-      const response = await this.request(`/reviews/product/${productId}/`)
+      const searchParams = new URLSearchParams()
+      if (params) {
+        Object.entries(params).forEach(([key, value]) => {
+          if (value !== undefined && value !== null && value !== "") {
+            searchParams.append(key, value.toString())
+          }
+        })
+      }
+
+      const queryString = searchParams.toString()
+      const response = await this.request(
+        `/reviews/product/${productId}/${queryString ? `?${queryString}` : ""}`
+      )
+      
       return {
         results: Array.isArray(response?.results) ? response.results : Array.isArray(response) ? response : [],
         count: response?.count || 0,
@@ -755,6 +1043,63 @@ class ApiClient {
     } catch (error) {
       console.error("Failed to fetch reviews:", error)
       return { results: [], count: 0, next: null, previous: null }
+    }
+  }
+
+  async getProductReviewsSummary(productId: number) {
+    if (!productId) {
+      throw new Error("Product ID is required")
+    }
+
+    try {
+      const response = await this.request(`/reviews/product/${productId}/summary/`)
+      
+      // Handle the actual API response structure
+      if (response?.success && response?.reviews_summary) {
+        const summary = response.reviews_summary
+        return {
+          average_rating: summary.average_rating || 0,
+          total_reviews: summary.total_reviews || 0,
+          rating_distribution: {
+            1: summary.rating_distribution?.["1_star"] || 0,
+            2: summary.rating_distribution?.["2_star"] || 0,
+            3: summary.rating_distribution?.["3_star"] || 0,
+            4: summary.rating_distribution?.["4_star"] || 0,
+            5: summary.rating_distribution?.["5_star"] || 0
+          },
+          verified_buyers: summary.verified_buyers || 0,
+          verified_buyer_percentage: summary.verified_buyer_percentage || 0
+        }
+      }
+      
+      return {
+        average_rating: 0,
+        total_reviews: 0,
+        rating_distribution: {
+          1: 0,
+          2: 0,
+          3: 0,
+          4: 0,
+          5: 0
+        },
+        verified_buyers: 0,
+        verified_buyer_percentage: 0
+      }
+    } catch (error) {
+      console.error("Failed to fetch review summary:", error)
+      return {
+        average_rating: 0,
+        total_reviews: 0,
+        rating_distribution: {
+          1: 0,
+          2: 0,
+          3: 0,
+          4: 0,
+          5: 0
+        },
+        verified_buyers: 0,
+        verified_buyer_percentage: 0
+      }
     }
   }
 
@@ -772,7 +1117,7 @@ class ApiClient {
       throw new Error("Rating must be between 1 and 5")
     }
 
-    return this.request("/reviews/create/", {
+    return this.request("/reviews/", {
       method: "POST",
       body: JSON.stringify(data),
     })
@@ -809,7 +1154,85 @@ class ApiClient {
       method: "DELETE",
     })
   }
+
+  async getReview(reviewId: string) {
+    if (!reviewId) {
+      throw new Error("Review ID is required")
+    }
+
+    try {
+      const response = await this.request(`/reviews/${reviewId}/`)
+      return response || null
+    } catch (error) {
+      console.error("Failed to fetch review:", error)
+      return null
+    }
+  }
+
+  async getUserReviews(params?: {
+    page?: number
+    page_size?: number
+    ordering?: string
+  }) {
+    try {
+      const searchParams = new URLSearchParams()
+      if (params) {
+        Object.entries(params).forEach(([key, value]) => {
+          if (value !== undefined && value !== null && value !== "") {
+            searchParams.append(key, value.toString())
+          }
+        })
+      }
+
+      const queryString = searchParams.toString()
+      const response = await this.request(`/reviews/user/${queryString ? `?${queryString}` : ""}`)
+      
+      return {
+        results: Array.isArray(response?.results) ? response.results : Array.isArray(response) ? response : [],
+        count: response?.count || 0,
+        next: response?.next || null,
+        previous: response?.previous || null,
+      }
+    } catch (error) {
+      console.error("Failed to fetch user reviews:", error)
+      return { results: [], count: 0, next: null, previous: null }
+    }
+  }
+
+  async markReviewHelpful(reviewId: string, helpful: boolean = true) {
+    if (!reviewId) {
+      throw new Error("Review ID is required")
+    }
+
+    try {
+      return this.request(`/reviews/${reviewId}/helpful/`, {
+        method: "POST",
+        body: JSON.stringify({ helpful }),
+      })
+    } catch (error) {
+      console.error("Failed to mark review as helpful:", error)
+      throw error
+    }
+  }
+
+  async reportReview(reviewId: string, reason: string) {
+    if (!reviewId || !reason) {
+      throw new Error("Review ID and reason are required")
+    }
+
+    try {
+      return this.request(`/reviews/${reviewId}/report/`, {
+        method: "POST",
+        body: JSON.stringify({ reason }),
+      })
+    } catch (error) {
+      console.error("Failed to report review:", error)
+      throw error
+    }
+  }
 }
+
+
 
 export const apiClient = new ApiClient(API_BASE_URL)
 export default apiClient

@@ -12,13 +12,15 @@ import { Textarea } from "@/components/ui/textarea"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Separator } from "@/components/ui/separator"
 import { Badge } from "@/components/ui/badge"
-import { Alert, AlertDescription } from "@/components/ui/alert"
+import { MessageModal } from "@/components/ui/message-modal"
 import { ArrowLeft, CreditCard, Truck, MapPin, Plus, Edit2, Trash2 } from "lucide-react"
 import { useCart } from "@/hooks/use-cart"
 import { useAuth } from "@/hooks/use-auth"
+import { useBuyNow, type BuyNowItem } from "@/hooks/use-buy-now"
 import { apiClient } from "@/lib/api"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 
 interface Address {
   id: number
@@ -47,12 +49,26 @@ export function CheckoutPage() {
   const router = useRouter()
   const { cart, clearCart } = useCart()
   const { user } = useAuth()
+  const { getBuyNowItem, clearBuyNowItem } = useBuyNow()
   const [loading, setLoading] = useState(false)
+  const [buyNowItem, setBuyNowItem] = useState<BuyNowItem | null>(null)
   const [addresses, setAddresses] = useState<Address[]>([])
   const [selectedAddress, setSelectedAddress] = useState<number | null>(null)
   const [paymentMethod, setPaymentMethod] = useState("online")
   const [orderNotes, setOrderNotes] = useState("")
-  const [error, setError] = useState("")
+  // Error and info modal state
+  const [modal, setModal] = useState({
+    isOpen: false,
+    type: 'info' as 'success' | 'error' | 'info' | 'warning' | 'confirm',
+    title: '',
+    message: '',
+    onConfirm: undefined as (() => void) | undefined,
+    showCancel: false,
+    confirmText: 'OK',
+    cancelText: 'Cancel',
+  })
+  const openModal = (options: Partial<typeof modal>) => setModal({ ...modal, ...options, isOpen: true })
+  const closeModal = () => setModal((prev) => ({ ...prev, isOpen: false }))
   const [showAddressForm, setShowAddressForm] = useState(false)
   const [editingAddress, setEditingAddress] = useState<Address | null>(null)
   const [paymentSession, setPaymentSession] = useState<PaymentSession | null>(null)
@@ -60,13 +76,13 @@ export function CheckoutPage() {
 
   const [addressForm, setAddressForm] = useState({
     type: "home",
-    full_name: "",
+    name: "",
     mobile: "",
     address_line_1: "",
     address_line_2: "",
     city: "",
     state: "",
-    postal_code: "",
+    pincode: "",
     country: "India",
     is_default: false,
   })
@@ -82,12 +98,23 @@ export function CheckoutPage() {
     card_holder_name: "",
   })
   const [otp, setOtp] = useState("")
+  const [otpVerified, setOtpVerified] = useState(false)
 
   useEffect(() => {
     if (user) {
       fetchAddresses()
     }
   }, [user])
+
+  // Check for buy now item from localStorage
+  useEffect(() => {
+    const buyNowData = getBuyNowItem()
+    if (buyNowData) {
+      setBuyNowItem(buyNowData)
+      // Clear the localStorage after setting state
+      clearBuyNowItem()
+    }
+  }, [getBuyNowItem, clearBuyNowItem])
 
   const fetchAddresses = async () => {
     try {
@@ -105,62 +132,73 @@ export function CheckoutPage() {
   const handleAddressSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
-    setError("")
+    // clear modal error
+    closeModal()
 
     try {
       if (editingAddress) {
         await apiClient.updateAddress(editingAddress.id, addressForm)
+        openModal({ type: 'success', title: 'Address Updated', message: 'Address updated successfully.' })
       } else {
         await apiClient.createAddress(addressForm)
+        openModal({ type: 'success', title: 'Address Added', message: 'Address added successfully.' })
       }
-
       await fetchAddresses()
       setShowAddressForm(false)
       setEditingAddress(null)
       setAddressForm({
         type: "home",
-        full_name: "",
+        name: "",
         mobile: "",
         address_line_1: "",
         address_line_2: "",
         city: "",
         state: "",
-        postal_code: "",
+        pincode: "",
         country: "India",
         is_default: false,
       })
     } catch (error: any) {
-      setError(error.message || "Failed to save address")
+      openModal({ type: 'error', title: 'Error', message: error.message || 'Failed to save address' })
     } finally {
       setLoading(false)
     }
   }
 
   const handleDeleteAddress = async (addressId: number) => {
-    if (confirm("Are you sure you want to delete this address?")) {
-      try {
-        await apiClient.deleteAddress(addressId)
-        await fetchAddresses()
-        if (selectedAddress === addressId) {
-          setSelectedAddress(null)
+    openModal({
+      type: 'confirm',
+      title: 'Delete Address',
+      message: 'Are you sure you want to delete this address?',
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
+      showCancel: true,
+      onConfirm: async () => {
+        try {
+          await apiClient.deleteAddress(addressId)
+          openModal({ type: 'success', title: 'Deleted', message: 'Address deleted successfully.' })
+          await fetchAddresses()
+          if (selectedAddress === addressId) {
+            setSelectedAddress(null)
+          }
+        } catch (error: any) {
+          openModal({ type: 'error', title: 'Error', message: error.message || 'Failed to delete address' })
         }
-      } catch (error: any) {
-        setError(error.message || "Failed to delete address")
-      }
-    }
+      },
+    })
   }
 
   const editAddress = (address: Address) => {
     setEditingAddress(address)
     setAddressForm({
       type: address.type,
-      full_name: address.full_name,
+      name: address.full_name,
       mobile: address.mobile,
       address_line_1: address.address_line_1,
       address_line_2: address.address_line_2 || "",
       city: address.city,
       state: address.state,
-      postal_code: address.postal_code,
+      pincode: address.postal_code,
       country: address.country,
       is_default: address.is_default,
     })
@@ -169,23 +207,44 @@ export function CheckoutPage() {
 
   const createOrder = async () => {
     if (!selectedAddress) {
-      setError("Please select a delivery address")
+      openModal({ type: 'error', title: 'Error', message: 'Please select a delivery address' })
       return null
     }
 
-    if (!cart || cart.items.length === 0) {
-      setError("Your cart is empty")
+    // Check if we have buy now item or cart items
+    const hasCartItems = cart && cart.items.length > 0
+    const hasBuyNowItem = buyNowItem
+
+    if (!hasCartItems && !hasBuyNowItem) {
+      openModal({ type: 'error', title: 'Error', message: 'No items to checkout' })
       return null
     }
 
     try {
-      // Prepare cart items for the order
-      const orderItems = cart.items.map((item) => ({
-        product_id: item.product.id,
-        variant_id: item.variant?.id || null,
-        quantity: item.quantity,
-        price: item.variant?.price ?? item.product.price,
-      }))
+      let orderItems: Array<{
+        product_id: number;
+        variant_id: number | null;
+        quantity: number;
+        price: number;
+      }> = []
+
+      if (hasBuyNowItem) {
+        // Use buy now item
+        orderItems = [{
+          product_id: buyNowItem.product.id,
+          variant_id: buyNowItem.variant?.id || null,
+          quantity: buyNowItem.quantity,
+          price: buyNowItem.variant?.price ?? buyNowItem.product.price,
+        }]
+      } else if (hasCartItems) {
+        // Use cart items
+        orderItems = cart!.items.map((item) => ({
+          product_id: item.product.id,
+          variant_id: item.variant?.id || null,
+          quantity: item.quantity,
+          price: item.variant?.price ?? item.product.price,
+        }))
+      }
 
       const response = await apiClient.createOrder({
         address_id: selectedAddress,
@@ -200,13 +259,14 @@ export function CheckoutPage() {
         throw new Error(response.message || "Failed to create order")
       }
     } catch (error: any) {
-      throw new Error(error.message || "Failed to create order")
+      openModal({ type: 'error', title: 'Error', message: error.message || 'Failed to create order' })
+      return null
     }
   }
 
   const handleCardPayment = async () => {
     if (!paymentSession) {
-      setError("Payment session not found")
+      openModal({ type: 'error', title: 'Error', message: 'Payment session not found' })
       return
     }
 
@@ -218,32 +278,32 @@ export function CheckoutPage() {
       !cardForm.card_expiry_yy ||
       !cardForm.card_cvv
     ) {
-      setError("Please fill in all card details.")
+      openModal({ type: 'error', title: 'Error', message: 'Please fill in all card details.' })
       return
     }
 
     // Validate card number (basic check)
     const cardNumber = cardForm.card_number.replace(/\s/g, "")
     if (cardNumber.length < 13 || cardNumber.length > 19) {
-      setError("Please enter a valid card number.")
+      openModal({ type: 'error', title: 'Error', message: 'Please enter a valid card number.' })
       return
     }
 
     // Validate expiry month
     const month = Number.parseInt(cardForm.card_expiry_mm)
     if (month < 1 || month > 12) {
-      setError("Please enter a valid expiry month (01-12).")
+      openModal({ type: 'error', title: 'Error', message: 'Please enter a valid expiry month (01-12).' })
       return
     }
 
     // Validate CVV
     if (cardForm.card_cvv.length < 3 || cardForm.card_cvv.length > 4) {
-      setError("Please enter a valid CVV.")
+      openModal({ type: 'error', title: 'Error', message: 'Please enter a valid CVV.' })
       return
     }
 
     setLoading(true)
-    setError("")
+    closeModal()
 
     try {
       const response = await apiClient.processCardPayment({
@@ -262,17 +322,24 @@ export function CheckoutPage() {
           setShowCardForm(false)
         } else if (response.payment_status === "SUCCESS") {
           // Payment successful
-          clearCart()
-          router.push(`/payment/success?order_id=${response.order_id}`)
+          if (!buyNowItem) {
+            clearCart()
+          }
+          // Clear buy now item state (if it exists)
+          setBuyNowItem(null)
+          // Add delay before redirect
+          setTimeout(() => {
+            router.push(`/payment/success?order_id=${response.order_id}`)
+          }, 1000)
         } else {
-          setError(response.message || "Payment processing failed")
+          openModal({ type: 'error', title: 'Error', message: response.message || 'Payment processing failed' })
         }
       } else {
-        setError(response.message || "Payment processing failed")
+        openModal({ type: 'error', title: 'Error', message: response.message || 'Payment processing failed' })
       }
     } catch (error: any) {
       console.error("Payment processing error:", error)
-      setError(error.message || "Payment processing failed. Please try again.")
+      openModal({ type: 'error', title: 'Error', message: error.message || 'Payment processing failed. Please try again.' })
     } finally {
       setLoading(false)
     }
@@ -280,12 +347,12 @@ export function CheckoutPage() {
 
   const handleOtpSubmit = async () => {
     if (!otp || !otpData) {
-      setError("Please enter OTP")
+      openModal({ type: 'error', title: 'Error', message: 'Please enter OTP' })
       return
     }
 
     setLoading(true)
-    setError("")
+    closeModal()
 
     try {
       const response = await apiClient.verifyPaymentOTP({
@@ -295,17 +362,31 @@ export function CheckoutPage() {
       })
 
       if (response.success && response.payment_status === "SUCCESS") {
-        clearCart()
-        router.push(`/payment/success?order_id=${response.order_id}`)
+        // Show success message before redirect
+        closeModal()
+        setOtpVerified(true)
+        
+        // Only clear cart if it's not a buy now item
+        if (!buyNowItem) {
+          clearCart()
+        }
+        // Clear buy now item state (if it exists)
+        setBuyNowItem(null)
+        
+        // Add delay to show success state before redirect
+        setTimeout(() => {
+          setLoading(false)
+          router.push(`/payment/success?order_id=${response.order_id}`)
+        }, 1500)
       } else {
-        setError(response.message || "OTP verification failed")
+        openModal({ type: 'error', title: 'Error', message: response.message || 'OTP verification failed' })
       }
     } catch (error: any) {
       console.error("OTP verification error:", error)
-      setError(error.message || "OTP verification failed. Please try again.")
-    } finally {
+      openModal({ type: 'error', title: 'Error', message: error.message || 'OTP verification failed. Please try again.' })
       setLoading(false)
     }
+    // Don't set loading false here if success - let the timeout handle it
   }
 
   const formatCardNumber = (value: string) => {
@@ -345,19 +426,19 @@ export function CheckoutPage() {
   }
 
   const handlePlaceOrder = async () => {
-    if (!cart || cart.items.length === 0) {
-      setError("Your cart is empty")
+    if (!buyNowItem && (!cart || cart.items.length === 0)) {
+      openModal({ type: 'error', title: 'Error', message: 'No items to checkout' })
       return
     }
 
     if (!selectedAddress) {
-      setError("Please select a delivery address")
+      openModal({ type: 'error', title: 'Error', message: 'Please select a delivery address' })
       return
     }
 
     setLoading(true)
     setProcessingPayment(true)
-    setError("")
+    closeModal()
 
     try {
       // Create order first
@@ -384,7 +465,11 @@ export function CheckoutPage() {
         }
       } else {
         // For COD, just redirect to success page
-        clearCart()
+        if (!buyNowItem) {
+          clearCart()
+        }
+        // Clear buy now item state (if it exists)
+        setBuyNowItem(null)
         router.push(`/payment/success?order_id=${order.id}`)
       }
     } catch (error: any) {
@@ -395,12 +480,14 @@ export function CheckoutPage() {
     }
   }
 
-  const subtotal =
-    cart?.items?.reduce((sum, item) => {
-      // Use variant price if available, otherwise fallback to product price
-      const price = item.variant?.price ?? item.product.price
-      return sum + price * item.quantity
-    }, 0) ?? 0
+  // Calculate totals based on buy now item or cart items
+  const subtotal = buyNowItem 
+    ? (buyNowItem.variant?.price ?? buyNowItem.product.price) * buyNowItem.quantity
+    : cart?.items?.reduce((sum, item) => {
+        // Use variant price if available, otherwise fallback to product price
+        const price = item.variant?.price ?? item.product.price
+        return sum + price * item.quantity
+      }, 0) ?? 0
   const shippingCost = subtotal >= 500 ? 0 : 50
   const taxAmount = subtotal * 0.18
   const total = subtotal + shippingCost + taxAmount
@@ -408,9 +495,13 @@ export function CheckoutPage() {
   if (!user) {
     return (
       <div className="p-4">
-        <Alert>
-          <AlertDescription>Please log in to continue with checkout.</AlertDescription>
-        </Alert>
+        <MessageModal
+          isOpen={true}
+          onClose={() => router.push("/auth/login")}
+          type="info"
+          title="Login Required"
+          message="Please log in to continue with checkout."
+        />
       </div>
     )
   }
@@ -426,11 +517,17 @@ export function CheckoutPage() {
           <h1 className="text-2xl font-bold">Checkout</h1>
         </div>
 
-        {error && (
-          <Alert className="mb-6 border-red-200 bg-red-50">
-            <AlertDescription className="text-red-800">{error}</AlertDescription>
-          </Alert>
-        )}
+        <MessageModal
+          isOpen={modal.isOpen}
+          onClose={closeModal}
+          onConfirm={modal.onConfirm}
+          type={modal.type}
+          title={modal.title}
+          message={modal.message}
+          confirmText={modal.confirmText}
+          cancelText={modal.cancelText}
+          showCancel={modal.showCancel}
+        />
 
         <div className="grid gap-6 lg:grid-cols-3">
           {/* Main Content */}
@@ -472,11 +569,11 @@ export function CheckoutPage() {
                           </Select>
                         </div>
                         <div>
-                          <Label htmlFor="full_name">Full Name</Label>
+                          <Label htmlFor="name">Full Name</Label>
                           <Input
-                            id="full_name"
-                            value={addressForm.full_name}
-                            onChange={(e) => setAddressForm({ ...addressForm, full_name: e.target.value })}
+                            id="name"
+                            value={addressForm.name}
+                            onChange={(e) => setAddressForm({ ...addressForm, name: e.target.value })}
                             required
                           />
                         </div>
@@ -527,11 +624,11 @@ export function CheckoutPage() {
                           </div>
                         </div>
                         <div>
-                          <Label htmlFor="postal_code">Postal Code</Label>
+                          <Label htmlFor="pincode">Postal Code</Label>
                           <Input
-                            id="postal_code"
-                            value={addressForm.postal_code}
-                            onChange={(e) => setAddressForm({ ...addressForm, postal_code: e.target.value })}
+                            id="pincode"
+                            value={addressForm.pincode}
+                            onChange={(e) => setAddressForm({ ...addressForm, pincode: e.target.value })}
                             required
                           />
                         </div>
@@ -635,9 +732,23 @@ export function CheckoutPage() {
                 <CardTitle>Order Summary</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                {/* Cart Items */}
+                {/* Order Items */}
                 <div className="space-y-3">
-                  {cart &&
+                  {buyNowItem ? (
+                    // Show buy now item
+                    <div className="flex justify-between text-sm">
+                      <div className="flex-1">
+                        <p className="font-medium">{buyNowItem.product.name}</p>
+                        {buyNowItem.variant && <p className="text-gray-500">{buyNowItem.variant.name}</p>}
+                        <p className="text-gray-500">Qty: {buyNowItem.quantity}</p>
+                      </div>
+                      <p className="font-medium">
+                        ₹{((buyNowItem.variant?.price ?? buyNowItem.product.price) * buyNowItem.quantity).toFixed(2)}
+                      </p>
+                    </div>
+                  ) : (
+                    // Show cart items
+                    cart &&
                     cart.items.map((item) => (
                       <div
                         key={`${item.product.id}-${item.variant?.id || "no-variant"}`}
@@ -652,7 +763,8 @@ export function CheckoutPage() {
                           ₹{((item.variant?.price ?? item.product.price) * item.quantity).toFixed(2)}
                         </p>
                       </div>
-                    ))}
+                    ))
+                  )}
                 </div>
 
                 <Separator />
@@ -688,7 +800,7 @@ export function CheckoutPage() {
                 <Button
                   className="w-full"
                   onClick={handlePlaceOrder}
-                  disabled={loading || processingPayment || !cart || cart.items.length === 0 || !selectedAddress}
+                  disabled={loading || processingPayment || (!buyNowItem && (!cart || cart.items.length === 0)) || !selectedAddress}
                 >
                   {processingPayment
                     ? "Processing Payment..."
@@ -819,6 +931,14 @@ export function CheckoutPage() {
                   </Alert>
                 )}
 
+                {otpVerified && (
+                  <Alert className="border-green-200 bg-green-50">
+                    <AlertDescription className="text-green-800">
+                      ✅ Payment verified successfully! Redirecting to success page...
+                    </AlertDescription>
+                  </Alert>
+                )}
+
                 <p className="text-sm text-gray-600">Please enter the OTP sent to your registered mobile number</p>
 
                 <div>
@@ -842,12 +962,14 @@ export function CheckoutPage() {
                       setOtp("")
                       setOtpData(null)
                       setError("")
+                      setOtpVerified(false)
                     }}
+                    disabled={loading}
                   >
                     Back
                   </Button>
                   <Button className="flex-1" onClick={handleOtpSubmit} disabled={loading || otp.length !== 6}>
-                    {loading ? "Verifying..." : "Verify OTP"}
+                    {loading ? (otpVerified ? "Payment Successful! Redirecting..." : "Verifying...") : "Verify OTP"}
                   </Button>
                 </div>
               </CardContent>
@@ -858,3 +980,6 @@ export function CheckoutPage() {
     </div>
   )
 }
+// Error state for card/OTP forms
+const [error, setError] = useState<string>("")
+

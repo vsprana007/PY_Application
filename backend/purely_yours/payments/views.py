@@ -116,11 +116,11 @@ def handle_cashfree_response(response, operation_name="API call"):
 def create_payment_session(request):
     print('Request data:', request.data)
     serializer = CreatePaymentSessionSerializer(data=request.data)
-    
     if serializer.is_valid():
         order_id = serializer.validated_data['order_id']
         return_url = serializer.validated_data.get('return_url', f"{request.build_absolute_uri('/')[:-1]}/payment/success/")
         notify_url = serializer.validated_data.get('notify_url', f"{request.build_absolute_uri('/')[:-1]}/api/payments/webhook/")
+        
 
         try:
             # Get the order

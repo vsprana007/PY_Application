@@ -4,16 +4,17 @@ from django.core.validators import MinValueValidator, MaxValueValidator
 
 User = get_user_model()
 
-class Category(models.Model):
+class Collection(models.Model):
     name = models.CharField(max_length=100, unique=True)
     slug = models.SlugField(unique=True)
     description = models.TextField(blank=True)
-    image = models.ImageField(upload_to='categories/', blank=True, null=True)
+    image = models.ImageField(upload_to='collections/', blank=True, null=True)
     is_active = models.BooleanField(default=True)
+    show_on_homepage = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        verbose_name_plural = 'Categories'
+        verbose_name_plural = 'Collections'
         ordering = ['name']
 
     def __str__(self):
@@ -23,7 +24,7 @@ class Product(models.Model):
     name = models.CharField(max_length=255)
     slug = models.SlugField(unique=True)
     description = models.TextField()
-    category = models.ForeignKey(Category, on_delete=models.CASCADE, related_name='products')
+    collections = models.ManyToManyField(Collection, related_name='products', blank=True)
     sku = models.CharField(max_length=50, unique=True)
     
     # Pricing
@@ -77,6 +78,7 @@ class Product(models.Model):
         return Review.objects.filter(product=self).count()
 
 class ProductVariant(models.Model):
+    id = models.BigIntegerField(primary_key=True)
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='variants')
     name = models.CharField(max_length=100)  # e.g., "30 Capsules", "60 Capsules"
     sku = models.CharField(max_length=50, unique=True)
@@ -119,12 +121,12 @@ class ProductTag(models.Model):
         return self.name
 
 class ProductTagAssignment(models.Model):
-    product = models.ForeignKey(Product, on_delete=models.CASCADE)
-    tag = models.ForeignKey(ProductTag, on_delete=models.CASCADE)
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='tag_assignments')
+    tag = models.ForeignKey(ProductTag, on_delete=models.CASCADE, related_name='product_assignments')
 
     class Meta:
         unique_together = ['product', 'tag']
-
+        
 class FAQ(models.Model):
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='faqs')
     question = models.CharField(max_length=500)
